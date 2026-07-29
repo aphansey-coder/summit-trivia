@@ -1,0 +1,1187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Team Trivia</title>
+<style>
+  :root {
+    --bg: #0f1220; --card: #191d33; --card-2: #222741; --line: #2e3454;
+    --text: #eef0f8; --muted: #9aa1c4; --accent: #6c7cff; --accent-2: #8b7cff;
+    --good: #2fbf71; --bad: #e05563; --gold: #f2c14e;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: radial-gradient(1100px 620px at 50% -12%, #262b4d 0%, var(--bg) 62%);
+    color: var(--text);
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    min-height: 100vh; padding: 20px 16px 48px;
+    display: flex; justify-content: center;
+  }
+  .wrap { width: 100%; max-width: 620px; }
+  .hidden { display: none !important; }
+
+  header.brand { text-align: center; margin: 8px 0 22px; }
+  header.brand h1 { margin: 0; font-size: 26px; letter-spacing: -0.4px; }
+  header.brand p { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+          padding: 22px; box-shadow: 0 18px 44px rgba(0,0,0,.34); }
+
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+  input[type=text] { width: 100%; padding: 14px 16px; font-size: 17px;
+    background: var(--card-2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 11px; outline: none; }
+  input[type=text]:focus { border-color: var(--accent); }
+
+  button { font: inherit; cursor: pointer; border: 0; border-radius: 11px;
+    padding: 14px 18px; font-weight: 600; color: #fff;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    transition: transform .06s ease, opacity .15s ease; }
+  button:active:not(:disabled) { transform: translateY(1px); }
+  button:disabled { opacity: .5; cursor: default; }
+  .btn-full { width: 100%; margin-top: 16px; }
+  .btn-ghost { background: var(--card-2); border: 1px solid var(--line); color: var(--text); }
+
+  .qmeta { display: flex; justify-content: space-between; align-items: center;
+           font-size: 13px; color: var(--muted); margin-bottom: 14px; }
+  .pill { background: var(--card-2); border: 1px solid var(--line);
+          padding: 4px 11px; border-radius: 999px; font-weight: 600; color: var(--text); }
+  .bar { height: 6px; background: var(--card-2); border-radius: 999px;
+         overflow: hidden; margin-bottom: 20px; }
+  .bar > i { display: block; height: 100%; width: 0;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .3s ease; }
+
+  h2.q { font-size: 21px; line-height: 1.35; margin: 0 0 20px; letter-spacing: -0.2px; }
+  .opts { display: grid; gap: 10px; }
+  .opt { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+    padding: 15px 16px; font-size: 16px; font-weight: 500; background: var(--card-2);
+    border: 1px solid var(--line); border-radius: 12px; color: var(--text); }
+  .opt .key { flex: 0 0 26px; height: 26px; border-radius: 7px; background: #313760;
+    display: grid; place-items: center; font-size: 13px; font-weight: 700; color: var(--muted); }
+  .opt:not(:disabled):hover { border-color: var(--accent); }
+  .opt.correct { background: rgba(47,191,113,.16); border-color: var(--good); }
+  .opt.correct .key { background: var(--good); color: #06240f; }
+  .opt.wrong { background: rgba(224,85,99,.16); border-color: var(--bad); }
+  .opt.wrong .key { background: var(--bad); color: #2c0409; }
+  .opt.dim { opacity: .45; }
+
+  .verdict { margin-top: 18px; padding: 14px 16px; border-radius: 12px; font-weight: 600;
+    display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .verdict.good { background: rgba(47,191,113,.14); color: #7ee0a8; }
+  .verdict.bad { background: rgba(224,85,99,.14); color: #f2919b; }
+  .verdict small { font-weight: 500; opacity: .85; display: block; font-size: 12.5px; }
+
+  .final { text-align: center; padding: 8px 0 4px; }
+  .final .score { font-size: 64px; font-weight: 800; letter-spacing: -2px; margin: 6px 0 2px; }
+  .final .sub { color: var(--muted); font-size: 14px; }
+  .final .big { font-size: 20px; font-weight: 700; margin-top: 14px; }
+  .final .detail { margin-top: 18px; font-size: 14px; color: var(--muted); }
+  .review { margin-top: 22px; text-align: left; }
+  .review h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .9px;
+               color: var(--muted); margin: 0 0 10px; }
+  .review ol { margin: 0; padding-left: 20px; }
+  .review li { margin-bottom: 8px; font-size: 14px; color: var(--muted); }
+  .review li b { color: var(--text); font-weight: 600; }
+  .review .ok { color: #7ee0a8; }
+  .review .no { color: #f2919b; }
+
+  /* Projector / tally */
+  .screen { text-align: center; }
+  .screen canvas { background: #fff; border-radius: 14px; padding: 10px;
+                   image-rendering: pixelated; }
+  .screen .url { font-size: 15px; font-weight: 700; word-break: break-all;
+                 margin-top: 16px; color: var(--text); }
+  .screen .hint { color: var(--muted); font-size: 13px; margin-top: 10px; }
+  .warn { background: rgba(242,193,78,.13); border: 1px solid rgba(242,193,78,.4);
+          color: var(--gold); border-radius: 12px; padding: 14px 16px; font-size: 14px;
+          text-align: left; margin-bottom: 18px; line-height: 1.45; }
+  .warn.hidden { display: none; }
+  .urlbox { margin-top: 20px; text-align: left; }
+  .urlbox label { font-size: 12px; text-transform: uppercase; letter-spacing: .8px; }
+  .urlbox input { font-size: 15px; }
+  table.lb { width: 100%; border-collapse: collapse; font-size: 16px; margin-top: 8px; }
+  table.lb th { text-align: left; font-size: 12px; text-transform: uppercase;
+    letter-spacing: .6px; color: var(--muted); font-weight: 600; padding: 0 8px 8px; }
+  table.lb td { padding: 9px 8px; border-top: 1px solid var(--line); }
+  table.lb td.rank { width: 34px; color: var(--muted); font-weight: 700; }
+  table.lb td.pts { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+  table.lb tr.win td.rank, table.lb tr.win td.nm { color: var(--gold); }
+  .tallyrow { display: flex; gap: 8px; margin-bottom: 8px; }
+  .tallyrow input { flex: 1; }
+  .tallyrow input.sc { flex: 0 0 90px; }
+  .crown { font-size: 20px; color: var(--gold); font-weight: 800;
+           margin: 18px 0 6px; text-align: center; }
+  .links { text-align: center; margin-top: 22px; font-size: 13px; }
+  .links a { color: var(--muted); text-decoration: none; border-bottom: 1px dotted var(--line); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="brand">
+    <h1 id="brandTitle">Team Trivia</h1>
+    <p id="brandSub">Answer at your own pace. Faster correct answers score a little extra.</p>
+  </header>
+
+  <!-- Start -->
+  <section id="startCard" class="card hidden">
+    <label for="nameInput">Your name (optional)</label>
+    <input id="nameInput" type="text" maxlength="24" autocomplete="off"
+           autocapitalize="words" placeholder="e.g. Asheen">
+    <button id="startBtn" class="btn-full">Start the quiz</button>
+    <div class="links"><a href="#projector">Projector screen</a> &nbsp;·&nbsp;
+      <a href="#tally">Enter scores</a></div>
+  </section>
+
+  <!-- Quiz -->
+  <section id="quizCard" class="card hidden">
+    <div class="qmeta">
+      <span id="qCount"></span>
+      <span class="pill" id="qScore">0.00 pts</span>
+    </div>
+    <div class="bar"><i id="qBar"></i></div>
+    <h2 class="q" id="qText"></h2>
+    <div class="opts" id="qOpts"></div>
+    <div id="verdict" class="verdict hidden"></div>
+    <button id="nextBtn" class="btn-full hidden">Next question</button>
+  </section>
+
+  <!-- Result -->
+  <section id="doneCard" class="card hidden">
+    <div class="final">
+      <div class="sub" id="doneName"></div>
+      <div class="score" id="doneScore">0.00</div>
+      <div class="sub" id="doneDetail"></div>
+      <div class="big" id="doneCallout"></div>
+      <div class="detail" id="doneTime"></div>
+    </div>
+    <div class="review" id="review"></div>
+    <button id="againBtn" class="btn-full btn-ghost">Start again</button>
+  </section>
+
+  <!-- Projector -->
+  <section id="projCard" class="card screen hidden">
+    <div id="projWarn" class="warn hidden"></div>
+    <canvas id="projQr" width="300" height="300" aria-label="QR code to open the quiz"></canvas>
+    <div class="url" id="projUrl"></div>
+    <div class="hint" id="projHint">Scan to play. Six questions, about three minutes.</div>
+    <div class="urlbox">
+      <label for="projUrlInput">Encode a different address</label>
+      <input id="projUrlInput" type="text" autocomplete="off" autocorrect="off"
+             spellcheck="false" placeholder="https://…">
+    </div>
+    <div class="links"><a href="#">Back</a> &nbsp;·&nbsp; <a href="#tally">Enter scores</a></div>
+  </section>
+
+  <!-- Tally -->
+  <section id="tallyCard" class="card hidden">
+    <h2 class="q" style="margin-bottom:6px">Final scores</h2>
+    <p style="color:var(--muted);font-size:14px;margin:0 0 18px">
+      Type each person's name and the score from their phone. The leaderboard sorts itself.
+    </p>
+    <div id="tallyRows"></div>
+    <button id="addRowBtn" class="btn-ghost" style="padding:9px 14px;font-size:14px">Add another</button>
+    <div id="tallyBoard"></div>
+    <div class="links"><a href="#">Back</a> &nbsp;·&nbsp; <a href="#projector">Projector screen</a></div>
+  </section>
+
+</div>
+
+<script>
+/*
+ * Minimal QR Code encoder -- byte mode, error correction level M, versions 1-15.
+ * Enough for any URL up to ~650 bytes. No dependencies, works offline.
+ *
+ * Implements ISO/IEC 18004: data encoding, Reed-Solomon error correction over
+ * GF(256), block interleaving, function pattern placement, the eight data masks
+ * with the standard penalty scoring, and BCH-protected format/version info.
+ *
+ * Verified by test-qr.js, which decodes the output back to the original string
+ * and checks that the Reed-Solomon syndromes are zero.
+ *
+ *   QR.encode("https://example.com")  ->  { version, size, modules }
+ *
+ * `modules` is a size x size array of 0/1, row-major, 1 = dark.
+ */
+(function (root) {
+  'use strict';
+
+  // --- per-version tables, error correction level M -------------------------
+  // [ total codewords, ec codewords per block,
+  //   group1 blocks, group1 data codewords, group2 blocks, group2 data codewords ]
+  var EC_M = {
+    1:  [26,  10, 1, 16, 0, 0],
+    2:  [44,  16, 1, 28, 0, 0],
+    3:  [70,  26, 1, 44, 0, 0],
+    4:  [100, 18, 2, 32, 0, 0],
+    5:  [134, 24, 2, 43, 0, 0],
+    6:  [172, 16, 4, 27, 0, 0],
+    7:  [196, 18, 4, 31, 0, 0],
+    8:  [242, 22, 2, 38, 2, 39],
+    9:  [292, 22, 3, 36, 2, 37],
+    10: [346, 26, 4, 43, 1, 44],
+    11: [404, 30, 1, 50, 4, 51],
+    12: [466, 22, 6, 36, 2, 37],
+    13: [532, 22, 8, 37, 1, 38],
+    14: [581, 24, 4, 40, 5, 41],
+    15: [655, 24, 5, 41, 5, 42]
+  };
+
+  var ALIGN = {
+    1: [], 2: [6, 18], 3: [6, 22], 4: [6, 26], 5: [6, 30], 6: [6, 34],
+    7: [6, 22, 38], 8: [6, 24, 42], 9: [6, 26, 46], 10: [6, 28, 50],
+    11: [6, 30, 54], 12: [6, 32, 58], 13: [6, 34, 62],
+    14: [6, 26, 46, 66], 15: [6, 26, 48, 70]
+  };
+
+  function remainderBits(v) {
+    if (v === 1) return 0;
+    if (v <= 6) return 7;
+    if (v <= 13) return 0;
+    return 3;
+  }
+
+  function dataCodewords(v) {
+    var t = EC_M[v];
+    return t[2] * t[3] + t[4] * t[5];
+  }
+
+  // --- GF(256) arithmetic, primitive polynomial 0x11D -----------------------
+  var EXP = new Uint8Array(512);
+  var LOG = new Uint8Array(256);
+  (function initGF() {
+    var x = 1;
+    for (var i = 0; i < 255; i++) {
+      EXP[i] = x;
+      LOG[x] = i;
+      x <<= 1;
+      if (x & 0x100) x ^= 0x11d;
+    }
+    for (var j = 255; j < 512; j++) EXP[j] = EXP[j - 255];
+  })();
+
+  function gfMul(a, b) {
+    if (a === 0 || b === 0) return 0;
+    return EXP[LOG[a] + LOG[b]];
+  }
+
+  function rsGenerator(degree) {
+    var poly = [1];
+    for (var d = 0; d < degree; d++) {
+      var next = new Array(poly.length + 1).fill(0);
+      for (var i = 0; i < poly.length; i++) {
+        next[i] ^= poly[i];
+        next[i + 1] ^= gfMul(poly[i], EXP[d]);
+      }
+      poly = next;
+    }
+    return poly;
+  }
+
+  function rsEncode(data, ecLen) {
+    var gen = rsGenerator(ecLen);
+    var rem = new Array(ecLen).fill(0);
+    for (var i = 0; i < data.length; i++) {
+      var factor = data[i] ^ rem[0];
+      rem.shift();
+      rem.push(0);
+      for (var j = 0; j < ecLen; j++) rem[j] ^= gfMul(gen[j + 1], factor);
+    }
+    return rem;
+  }
+
+  // --- data encoding --------------------------------------------------------
+
+  function utf8Bytes(str) {
+    var out = [];
+    for (var i = 0; i < str.length; i++) {
+      var c = str.charCodeAt(i);
+      if (c < 0x80) {
+        out.push(c);
+      } else if (c < 0x800) {
+        out.push(0xc0 | (c >> 6), 0x80 | (c & 0x3f));
+      } else if (c >= 0xd800 && c <= 0xdbff && i + 1 < str.length) {
+        var cp = 0x10000 + ((c - 0xd800) << 10) + (str.charCodeAt(++i) - 0xdc00);
+        out.push(0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 0x3f),
+                 0x80 | ((cp >> 6) & 0x3f), 0x80 | (cp & 0x3f));
+      } else {
+        out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 0x3f), 0x80 | (c & 0x3f));
+      }
+    }
+    return out;
+  }
+
+  function pickVersion(byteLen) {
+    for (var v = 1; v <= 15; v++) {
+      var cci = v < 10 ? 8 : 16;
+      var needed = 4 + cci + 8 * byteLen;
+      if (dataCodewords(v) * 8 >= needed) return v;
+    }
+    throw new Error('Text too long for this QR encoder (max ~650 bytes).');
+  }
+
+  function buildCodewords(bytes, version) {
+    var bits = [];
+    function push(value, len) {
+      for (var i = len - 1; i >= 0; i--) bits.push((value >> i) & 1);
+    }
+
+    push(4, 4); // byte mode
+    push(bytes.length, version < 10 ? 8 : 16);
+    for (var i = 0; i < bytes.length; i++) push(bytes[i], 8);
+
+    var capacity = dataCodewords(version) * 8;
+    var terminator = Math.min(4, capacity - bits.length);
+    for (var t = 0; t < terminator; t++) bits.push(0);
+    while (bits.length % 8 !== 0) bits.push(0);
+
+    var words = [];
+    for (var b = 0; b < bits.length; b += 8) {
+      var byte = 0;
+      for (var k = 0; k < 8; k++) byte = (byte << 1) | bits[b + k];
+      words.push(byte);
+    }
+    var pads = [0xec, 0x11];
+    for (var p = 0; words.length < dataCodewords(version); p++) {
+      words.push(pads[p % 2]);
+    }
+    return words;
+  }
+
+  function interleave(words, version) {
+    var t = EC_M[version];
+    var ecLen = t[1];
+    var blocks = [];
+    var pos = 0;
+
+    for (var g = 0; g < 2; g++) {
+      var count = g === 0 ? t[2] : t[4];
+      var size = g === 0 ? t[3] : t[5];
+      for (var b = 0; b < count; b++) {
+        var data = words.slice(pos, pos + size);
+        pos += size;
+        blocks.push({ data: data, ec: rsEncode(data, ecLen) });
+      }
+    }
+
+    var out = [];
+    var maxData = Math.max.apply(null, blocks.map(function (x) { return x.data.length; }));
+    for (var i = 0; i < maxData; i++) {
+      for (var j = 0; j < blocks.length; j++) {
+        if (i < blocks[j].data.length) out.push(blocks[j].data[i]);
+      }
+    }
+    for (var e = 0; e < ecLen; e++) {
+      for (var m = 0; m < blocks.length; m++) out.push(blocks[m].ec[e]);
+    }
+    return out;
+  }
+
+  // --- matrix construction --------------------------------------------------
+
+  function newMatrix(size, fill) {
+    var m = [];
+    for (var i = 0; i < size; i++) m.push(new Array(size).fill(fill));
+    return m;
+  }
+
+  function placeFunctionPatterns(modules, reserved, version) {
+    var size = modules.length;
+
+    function setArea(r0, c0, h, w, fn) {
+      for (var r = 0; r < h; r++) {
+        for (var c = 0; c < w; c++) {
+          var rr = r0 + r, cc = c0 + c;
+          if (rr < 0 || cc < 0 || rr >= size || cc >= size) continue;
+          modules[rr][cc] = fn(r, c);
+          reserved[rr][cc] = true;
+        }
+      }
+    }
+
+    // Finder patterns plus their separators (a 9x9 area centred on each).
+    // Within the 7x7 finder, Chebyshev distance from the centre: rings 0, 1 and
+    // 3 are dark, ring 2 is the light gap. Everything outside is the separator.
+    [[0, 0], [0, size - 7], [size - 7, 0]].forEach(function (p) {
+      setArea(p[0] - 1, p[1] - 1, 9, 9, function (r, c) {
+        var rr = r - 1, cc = c - 1;
+        if (rr < 0 || cc < 0 || rr > 6 || cc > 6) return 0; // separator
+        var ring = Math.max(Math.abs(rr - 3), Math.abs(cc - 3));
+        return ring === 2 ? 0 : 1;
+      });
+    });
+
+    // Alignment patterns, skipping any that collide with a finder.
+    var centers = ALIGN[version];
+    for (var a = 0; a < centers.length; a++) {
+      for (var b = 0; b < centers.length; b++) {
+        var cr = centers[a], cc2 = centers[b];
+        var nearFinder =
+          (cr <= 8 && cc2 <= 8) ||
+          (cr <= 8 && cc2 >= size - 9) ||
+          (cr >= size - 9 && cc2 <= 8);
+        if (nearFinder) continue;
+        setArea(cr - 2, cc2 - 2, 5, 5, function (r, c) {
+          var ring = Math.max(Math.abs(r - 2), Math.abs(c - 2));
+          return ring === 1 ? 0 : 1;
+        });
+      }
+    }
+
+    // Timing patterns.
+    for (var i = 8; i < size - 8; i++) {
+      if (!reserved[6][i]) { modules[6][i] = i % 2 === 0 ? 1 : 0; reserved[6][i] = true; }
+      if (!reserved[i][6]) { modules[i][6] = i % 2 === 0 ? 1 : 0; reserved[i][6] = true; }
+    }
+
+    // Dark module.
+    modules[size - 8][8] = 1;
+    reserved[size - 8][8] = true;
+
+    // Reserve the format information areas.
+    for (var k = 0; k <= 8; k++) {
+      if (!reserved[8][k]) { reserved[8][k] = true; modules[8][k] = 0; }
+      if (!reserved[k][8]) { reserved[k][8] = true; modules[k][8] = 0; }
+    }
+    for (var n = 0; n < 8; n++) {
+      if (!reserved[8][size - 1 - n]) { reserved[8][size - 1 - n] = true; modules[8][size - 1 - n] = 0; }
+      if (!reserved[size - 1 - n][8]) { reserved[size - 1 - n][8] = true; modules[size - 1 - n][8] = 0; }
+    }
+
+    // Version information blocks, versions 7 and up.
+    if (version >= 7) {
+      for (var r2 = 0; r2 < 6; r2++) {
+        for (var c3 = 0; c3 < 3; c3++) {
+          reserved[r2][size - 11 + c3] = true;
+          reserved[size - 11 + c3][r2] = true;
+        }
+      }
+    }
+  }
+
+  // Walk the data region: pairs of columns, right to left, zigzagging.
+  function dataPositions(size, reserved) {
+    var positions = [];
+    var upward = true;
+    for (var right = size - 1; right > 0; right -= 2) {
+      if (right === 6) right = 5; // skip the vertical timing column
+      for (var i = 0; i < size; i++) {
+        var row = upward ? size - 1 - i : i;
+        for (var c = 0; c < 2; c++) {
+          var col = right - c;
+          if (!reserved[row][col]) positions.push([row, col]);
+        }
+      }
+      upward = !upward;
+    }
+    return positions;
+  }
+
+  var MASKS = [
+    function (r, c) { return (r + c) % 2 === 0; },
+    function (r) { return r % 2 === 0; },
+    function (r, c) { return c % 3 === 0; },
+    function (r, c) { return (r + c) % 3 === 0; },
+    function (r, c) { return (Math.floor(r / 2) + Math.floor(c / 3)) % 2 === 0; },
+    function (r, c) { return ((r * c) % 2) + ((r * c) % 3) === 0; },
+    function (r, c) { return (((r * c) % 2) + ((r * c) % 3)) % 2 === 0; },
+    function (r, c) { return (((r + c) % 2) + ((r * c) % 3)) % 2 === 0; }
+  ];
+
+  function penalty(m) {
+    var size = m.length, score = 0, i, j, run, k;
+
+    // Rule 1: runs of five or more same-coloured modules in a row or column.
+    for (i = 0; i < size; i++) {
+      for (var dir = 0; dir < 2; dir++) {
+        run = 1;
+        for (j = 1; j < size; j++) {
+          var cur = dir === 0 ? m[i][j] : m[j][i];
+          var prev = dir === 0 ? m[i][j - 1] : m[j - 1][i];
+          if (cur === prev) {
+            run++;
+          } else {
+            if (run >= 5) score += 3 + (run - 5);
+            run = 1;
+          }
+        }
+        if (run >= 5) score += 3 + (run - 5);
+      }
+    }
+
+    // Rule 2: 2x2 blocks of one colour.
+    for (i = 0; i < size - 1; i++) {
+      for (j = 0; j < size - 1; j++) {
+        var v = m[i][j];
+        if (v === m[i][j + 1] && v === m[i + 1][j] && v === m[i + 1][j + 1]) score += 3;
+      }
+    }
+
+    // Rule 3: finder-like 1:1:3:1:1 patterns with four light modules beside them.
+    var p1 = [1, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0];
+    var p2 = [0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 1];
+    for (i = 0; i < size; i++) {
+      for (j = 0; j + 11 <= size; j++) {
+        var okR1 = true, okR2 = true, okC1 = true, okC2 = true;
+        for (k = 0; k < 11; k++) {
+          if (m[i][j + k] !== p1[k]) okR1 = false;
+          if (m[i][j + k] !== p2[k]) okR2 = false;
+          if (m[j + k][i] !== p1[k]) okC1 = false;
+          if (m[j + k][i] !== p2[k]) okC2 = false;
+        }
+        if (okR1) score += 40;
+        if (okR2) score += 40;
+        if (okC1) score += 40;
+        if (okC2) score += 40;
+      }
+    }
+
+    // Rule 4: deviation from a 50/50 balance of dark and light.
+    var dark = 0;
+    for (i = 0; i < size; i++) for (j = 0; j < size; j++) dark += m[i][j];
+    var pct = (dark * 100) / (size * size);
+    score += Math.floor(Math.abs(pct - 50) / 5) * 10;
+
+    return score;
+  }
+
+  function formatBits(mask) {
+    var data = (0 << 3) | mask; // 0b00 = error correction level M
+    var rem = data;
+    for (var i = 0; i < 10; i++) {
+      rem = (rem << 1) ^ ((rem >> 9) * 0x537);
+    }
+    return (((data << 10) | (rem & 0x3ff)) ^ 0x5412) & 0x7fff;
+  }
+
+  function versionBits(version) {
+    var rem = version;
+    for (var i = 0; i < 12; i++) {
+      rem = (rem << 1) ^ ((rem >> 11) * 0x1f25);
+    }
+    return ((version << 12) | (rem & 0xfff)) & 0x3ffff;
+  }
+
+  function applyFormat(modules, mask) {
+    var size = modules.length;
+    var bits = formatBits(mask);
+    // Coordinates here are [row][column]. Getting the two copies consistent
+    // matters: a scanner may read either one, and they must agree.
+    for (var i = 0; i < 15; i++) {
+      var bit = (bits >> i) & 1;
+
+      // First copy: down column 8, then left along row 8.
+      if (i < 6) modules[i][8] = bit;
+      else if (i === 6) modules[7][8] = bit;
+      else if (i === 7) modules[8][8] = bit;
+      else if (i === 8) modules[8][7] = bit;
+      else modules[8][14 - i] = bit;
+
+      // Second copy: 7 modules up column 8 from the bottom (bits 0-6), then 8
+      // along row 8 (bits 7-14). The dark module sits at [size-8][8], between
+      // the two runs, which is why the vertical run stops at 7.
+      if (i < 7) modules[size - 1 - i][8] = bit;
+      else modules[8][size - 15 + i] = bit;
+    }
+    modules[size - 8][8] = 1; // dark module, always set
+  }
+
+  function applyVersionInfo(modules, version) {
+    if (version < 7) return;
+    var size = modules.length;
+    var bits = versionBits(version);
+    for (var i = 0; i < 18; i++) {
+      var bit = (bits >> i) & 1;
+      var r = Math.floor(i / 3), c = i % 3;
+      modules[r][size - 11 + c] = bit;
+      modules[size - 11 + c][r] = bit;
+    }
+  }
+
+  function encode(text, options) {
+    var opts = options || {};
+    var bytes = utf8Bytes(String(text));
+    var version = opts.version || pickVersion(bytes.length);
+    // opts.mask forces a specific mask; used by the tests to compare against a
+    // reference implementation without mask-choice policy getting in the way.
+    var forcedMask = (typeof opts.mask === 'number') ? opts.mask : null;
+    if (!EC_M[version]) throw new Error('Unsupported QR version: ' + version);
+
+    var words = interleave(buildCodewords(bytes, version), version);
+    var size = 17 + 4 * version;
+
+    var base = newMatrix(size, 0);
+    var reserved = newMatrix(size, false);
+    placeFunctionPatterns(base, reserved, version);
+
+    var positions = dataPositions(size, reserved);
+    var totalBits = words.length * 8 + remainderBits(version);
+    if (positions.length !== totalBits) {
+      throw new Error(
+        'Internal error: ' + positions.length + ' data modules but ' + totalBits + ' bits'
+      );
+    }
+    for (var i = 0; i < positions.length; i++) {
+      var byte = words[i >> 3];
+      var bit = byte === undefined ? 0 : (byte >> (7 - (i & 7))) & 1;
+      base[positions[i][0]][positions[i][1]] = bit;
+    }
+
+    // Try every mask, keep the lowest-penalty result.
+    var best = null;
+    for (var mask = 0; mask < 8; mask++) {
+      if (forcedMask !== null && mask !== forcedMask) continue;
+      var m = base.map(function (row) { return row.slice(); });
+      for (var p = 0; p < positions.length; p++) {
+        var r = positions[p][0], c = positions[p][1];
+        if (MASKS[mask](r, c)) m[r][c] ^= 1;
+      }
+      applyVersionInfo(m, version);
+      applyFormat(m, mask);
+      var score = penalty(m);
+      if (!best || score < best.score) best = { score: score, mask: mask, modules: m };
+    }
+
+    return { version: version, size: size, mask: best.mask, modules: best.modules };
+  }
+
+  var api = { encode: encode, _internals: { EC_M: EC_M, ALIGN: ALIGN, MASKS: MASKS,
+    dataPositions: dataPositions, placeFunctionPatterns: placeFunctionPatterns,
+    newMatrix: newMatrix, dataCodewords: dataCodewords, remainderBits: remainderBits,
+    gfMul: gfMul, EXP: EXP, LOG: LOG } };
+
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else root.QR = api;
+})(typeof window !== 'undefined' ? window : this);
+
+</script>
+<script>
+/*
+ * Pure logic for the static (serverless) trivia app.
+ *
+ * Kept free of any DOM access so it can be tested directly in Node. The build
+ * script inlines this file into dist/index.html; test-static.js requires it.
+ */
+(function (root, factory) {
+  if (typeof module !== 'undefined' && module.exports) module.exports = factory();
+  else root.QuizLogic = factory();
+})(typeof window !== 'undefined' ? window : this, function () {
+  'use strict';
+
+  var SPEED_WINDOW_MS = 15000;
+  var TOTAL_BONUS_CAP = 0.9; // across the whole quiz, so accuracy always wins
+
+  // --- questions ------------------------------------------------------------
+
+  // Questions are embedded base64-encoded. That is obfuscation, not security:
+  // a static page has to contain its own answers, so anyone determined can
+  // recover them. It only stops answers appearing in plain view-source.
+  function decodeQuestions(encoded, atobFn) {
+    var decode = atobFn || (typeof atob === 'function' ? atob : null);
+    if (!decode) throw new Error('No base64 decoder available');
+    var json = decodeURIComponent(
+      decode(encoded)
+        .split('')
+        .map(function (c) {
+          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+        })
+        .join('')
+    );
+    var parsed = JSON.parse(json);
+    var list = Array.isArray(parsed) ? parsed : parsed.questions;
+    return {
+      title: (parsed && parsed.title) || 'Team Trivia',
+      questions: list.map(function (q) {
+        var type = q.type === 'true-false' ? 'true-false' : 'multiple-choice';
+        return {
+          type: type,
+          text: q.text,
+          options: type === 'true-false' ? ['True', 'False'] : q.options,
+          answer: q.answer
+        };
+      })
+    };
+  }
+
+  // --- scoring --------------------------------------------------------------
+
+  function bonusPerQuestion(questionCount) {
+    return TOTAL_BONUS_CAP / questionCount;
+  }
+
+  function computeBonus(timeMs, questionCount) {
+    var remaining = Math.max(0, SPEED_WINDOW_MS - timeMs);
+    return bonusPerQuestion(questionCount) * (remaining / SPEED_WINDOW_MS);
+  }
+
+  // Points for one answer. Correct is always worth a full point plus a small
+  // speed bonus; wrong is worth nothing.
+  function scoreAnswer(correct, timeMs, questionCount) {
+    if (!correct) return 0;
+    return 1 + computeBonus(timeMs, questionCount);
+  }
+
+  function round2(n) {
+    return Math.round(n * 100) / 100;
+  }
+
+  // Roll a list of {correct, timeMs} into a final result.
+  function summarise(answers, questionCount) {
+    var score = 0;
+    var correct = 0;
+    var totalTimeMs = 0;
+    answers.forEach(function (a) {
+      score += scoreAnswer(a.correct, a.timeMs, questionCount);
+      if (a.correct) correct += 1;
+      totalTimeMs += a.timeMs;
+    });
+    return {
+      score: round2(score),
+      correct: correct,
+      total: questionCount,
+      totalTimeMs: totalTimeMs
+    };
+  }
+
+  // --- tally (host types in scores at the end) ------------------------------
+
+  // Sort by score, then correct count, then fastest. Dense ranking so genuine
+  // ties share a place.
+  function rank(entries) {
+    var rows = entries
+      .filter(function (e) {
+        return e && String(e.name || '').trim();
+      })
+      .map(function (e) {
+        return {
+          name: String(e.name).trim(),
+          score: Number(e.score) || 0,
+          correct: e.correct === undefined || e.correct === null ? null : Number(e.correct)
+        };
+      });
+
+    rows.sort(function (a, b) {
+      if (b.score !== a.score) return b.score - a.score;
+      var ac = a.correct === null ? -1 : a.correct;
+      var bc = b.correct === null ? -1 : b.correct;
+      return bc - ac;
+    });
+
+    var lastKey = null;
+    var lastRank = 0;
+    rows.forEach(function (r, i) {
+      var key = r.score + '|' + r.correct;
+      if (key === lastKey) {
+        r.rank = lastRank;
+      } else {
+        r.rank = i + 1;
+        lastRank = r.rank;
+        lastKey = key;
+      }
+    });
+
+    return rows;
+  }
+
+  function winners(ranked) {
+    return ranked
+      .filter(function (r) {
+        return r.rank === 1;
+      })
+      .map(function (r) {
+        return r.name;
+      });
+  }
+
+  // --- misc -----------------------------------------------------------------
+
+  function ordinal(n) {
+    var s = ['th', 'st', 'nd', 'rd'];
+    var v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+  }
+
+  return {
+    SPEED_WINDOW_MS: SPEED_WINDOW_MS,
+    TOTAL_BONUS_CAP: TOTAL_BONUS_CAP,
+    decodeQuestions: decodeQuestions,
+    bonusPerQuestion: bonusPerQuestion,
+    computeBonus: computeBonus,
+    scoreAnswer: scoreAnswer,
+    summarise: summarise,
+    round2: round2,
+    rank: rank,
+    winners: winners,
+    ordinal: ordinal
+  };
+});
+
+</script>
+<script>
+(function () {
+  'use strict';
+
+  var ENCODED = 'eyJ0aXRsZSI6IlRlYW0gVHJpdmlhIiwicXVlc3Rpb25zIjpbeyJ0eXBlIjoibXVsdGlwbGUtY2hvaWNlIiwidGV4dCI6IldoaWNoIHBsYW5ldCBpbiBvdXIgc29sYXIgc3lzdGVtIGhhcyB0aGUgbW9zdCBtb29ucz8iLCJvcHRpb25zIjpbIkp1cGl0ZXIiLCJTYXR1cm4iLCJOZXB0dW5lIiwiVXJhbnVzIl0sImFuc3dlciI6MX0seyJ0eXBlIjoidHJ1ZS1mYWxzZSIsInRleHQiOiJUaGUgR3JlYXQgV2FsbCBvZiBDaGluYSBpcyB2aXNpYmxlIGZyb20gdGhlIE1vb24gd2l0aCB0aGUgbmFrZWQgZXllLiIsImFuc3dlciI6MX0seyJ0eXBlIjoibXVsdGlwbGUtY2hvaWNlIiwidGV4dCI6IldoYXQgaXMgdGhlIG1vc3Qgd2lkZWx5IHNwb2tlbiBsYW5ndWFnZSBpbiB0aGUgd29ybGQgYnkgbnVtYmVyIG9mIG5hdGl2ZSBzcGVha2Vycz8iLCJvcHRpb25zIjpbIkVuZ2xpc2giLCJTcGFuaXNoIiwiTWFuZGFyaW4gQ2hpbmVzZSIsIkhpbmRpIl0sImFuc3dlciI6Mn0seyJ0eXBlIjoibXVsdGlwbGUtY2hvaWNlIiwidGV4dCI6IkluIHdoYXQgeWVhciBkaWQgdGhlIGZpcnN0IGlQaG9uZSBnbyBvbiBzYWxlPyIsIm9wdGlvbnMiOlsiMjAwNSIsIjIwMDYiLCIyMDA3IiwiMjAwOCJdLCJhbnN3ZXIiOjJ9LHsidHlwZSI6InRydWUtZmFsc2UiLCJ0ZXh0IjoiSG9uZXkgbmV2ZXIgc3BvaWxzIOKAlCBlZGlibGUgamFycyBvZiBpdCBoYXZlIGJlZW4gZm91bmQgaW4gYW5jaWVudCB0b21icy4iLCJhbnN3ZXIiOjB9LHsidHlwZSI6Im11bHRpcGxlLWNob2ljZSIsInRleHQiOiJXaGljaCBvZiB0aGVzZSBpcyBOT1QgYSBwcmltYXJ5IGNvbG91ciBvZiBsaWdodD8iLCJvcHRpb25zIjpbIlJlZCIsIkdyZWVuIiwiWWVsbG93IiwiQmx1ZSJdLCJhbnN3ZXIiOjJ9XX0=';
+  var L = window.QuizLogic;
+  var el = function (id) { return document.getElementById(id); };
+
+  var pack = L.decodeQuestions(ENCODED);
+  var QUESTIONS = pack.questions;
+  var TOTAL = QUESTIONS.length;
+  var LETTERS = ['A', 'B', 'C', 'D', 'E', 'F'];
+
+  document.title = pack.title;
+  el('brandTitle').textContent = pack.title;
+
+  var state = { name: '', index: 0, answers: [], shownAt: 0, answered: false };
+
+  function show(which) {
+    ['startCard', 'quizCard', 'doneCard', 'projCard', 'tallyCard'].forEach(function (id) {
+      el(id).classList.toggle('hidden', id !== which);
+    });
+  }
+
+  // --- quiz ----------------------------------------------------------------
+
+  function renderQuestion() {
+    var q = QUESTIONS[state.index];
+    state.answered = false;
+
+    el('qCount').textContent = 'Question ' + (state.index + 1) + ' of ' + TOTAL;
+    el('qScore').textContent = runningScore().toFixed(2) + ' pts';
+    el('qBar').style.width = ((state.index / TOTAL) * 100) + '%';
+    el('qText').textContent = q.text;
+
+    var box = el('qOpts');
+    box.innerHTML = '';
+    q.options.forEach(function (text, i) {
+      var b = document.createElement('button');
+      b.className = 'opt';
+      b.type = 'button';
+      var key = document.createElement('span');
+      key.className = 'key';
+      key.textContent = q.type === 'true-false' ? (i === 0 ? 'T' : 'F') : LETTERS[i];
+      var txt = document.createElement('span');
+      txt.textContent = text;
+      b.appendChild(key);
+      b.appendChild(txt);
+      b.onclick = function () { answer(i); };
+      box.appendChild(b);
+    });
+
+    el('verdict').className = 'verdict hidden';
+    el('nextBtn').classList.add('hidden');
+    show('quizCard');
+    state.shownAt = Date.now();
+  }
+
+  function runningScore() {
+    return L.summarise(state.answers, TOTAL).score;
+  }
+
+  function answer(choice) {
+    if (state.answered) return;
+    state.answered = true;
+
+    var q = QUESTIONS[state.index];
+    var timeMs = Math.max(0, Date.now() - state.shownAt);
+    var correct = choice === q.answer;
+    var points = L.scoreAnswer(correct, timeMs, TOTAL);
+
+    state.answers.push({
+      questionIndex: state.index, choice: choice, correct: correct,
+      timeMs: timeMs, points: L.round2(points)
+    });
+
+    Array.prototype.forEach.call(el('qOpts').children, function (b, i) {
+      b.disabled = true;
+      if (i === q.answer) b.classList.add('correct');
+      else if (i === choice) b.classList.add('wrong');
+      else b.classList.add('dim');
+    });
+
+    var v = el('verdict');
+    v.className = 'verdict ' + (correct ? 'good' : 'bad');
+    v.innerHTML = '';
+    var left = document.createElement('span');
+    left.textContent = correct ? 'Correct' : 'Not quite';
+    var small = document.createElement('small');
+    small.textContent = 'Answered in ' + (timeMs / 1000).toFixed(1) + 's';
+    left.appendChild(small);
+    var right = document.createElement('span');
+    right.textContent = '+' + L.round2(points).toFixed(2);
+    v.appendChild(left);
+    v.appendChild(right);
+
+    el('qScore').textContent = runningScore().toFixed(2) + ' pts';
+
+    var btn = el('nextBtn');
+    btn.textContent = state.index + 1 >= TOTAL ? 'See my score' : 'Next question';
+    btn.classList.remove('hidden');
+    btn.onclick = function () {
+      state.index += 1;
+      if (state.index >= TOTAL) renderDone();
+      else renderQuestion();
+    };
+  }
+
+  function renderDone() {
+    var s = L.summarise(state.answers, TOTAL);
+
+    el('doneName').textContent = state.name
+      ? state.name + ' — final score'
+      : 'Final score';
+    el('doneScore').textContent = s.score.toFixed(2);
+    el('doneDetail').textContent = s.correct + ' of ' + s.total + ' correct';
+    el('doneCallout').textContent = s.correct === s.total
+      ? 'Clean sweep.'
+      : (s.correct === 0 ? 'Tough round.' : '');
+    el('doneTime').textContent =
+      'Total answering time ' + (s.totalTimeMs / 1000).toFixed(1) + 's. ' +
+      'Read out your score of ' + s.score.toFixed(2) + ' when asked.';
+
+    var box = el('review');
+    box.innerHTML = '';
+    var h = document.createElement('h3');
+    h.textContent = 'Your answers';
+    box.appendChild(h);
+    var ol = document.createElement('ol');
+    state.answers.forEach(function (a) {
+      var q = QUESTIONS[a.questionIndex];
+      var li = document.createElement('li');
+      var mark = document.createElement('span');
+      mark.className = a.correct ? 'ok' : 'no';
+      mark.textContent = a.correct ? '✓ ' : '✗ ';
+      li.appendChild(mark);
+      li.appendChild(document.createTextNode(q.text + ' — '));
+      var b = document.createElement('b');
+      b.textContent = q.options[q.answer];
+      li.appendChild(b);
+      ol.appendChild(li);
+    });
+    box.appendChild(ol);
+
+    show('doneCard');
+  }
+
+  el('startBtn').onclick = function () {
+    state = {
+      name: el('nameInput').value.trim(),
+      index: 0, answers: [], shownAt: 0, answered: false
+    };
+    renderQuestion();
+  };
+  el('nameInput').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') el('startBtn').click();
+  });
+  el('againBtn').onclick = function () {
+    location.hash = '';
+    show('startCard');
+  };
+
+  document.addEventListener('keydown', function (e) {
+    if (el('quizCard').classList.contains('hidden')) return;
+    if (!state.answered) {
+      var idx = -1;
+      if (e.key >= '1' && e.key <= '6') idx = Number(e.key) - 1;
+      var letter = LETTERS.indexOf(String(e.key).toUpperCase());
+      if (letter !== -1) idx = letter;
+      var opts = el('qOpts').children;
+      if (idx >= 0 && idx < opts.length) { e.preventDefault(); answer(idx); }
+    } else if (e.key === 'Enter') {
+      var btn = el('nextBtn');
+      if (!btn.classList.contains('hidden')) { e.preventDefault(); btn.click(); }
+    }
+  });
+
+  // --- projector -----------------------------------------------------------
+
+  // Opened from disk there is no web address -- location.origin is the string
+  // "null" -- so encoding it would produce a QR that scans to nothing. Detect
+  // that and ask for a real URL instead.
+  function isServed() {
+    return /^https?:$/.test(location.protocol);
+  }
+
+  function playerUrl() {
+    if (!isServed()) return '';
+    return location.origin + location.pathname;
+  }
+
+  function drawQr(canvas, text, targetPx) {
+    if (!canvas || typeof QR === 'undefined') return false;
+    var sym;
+    try { sym = QR.encode(text); } catch (e) { return false; }
+    var quiet = 4;
+    var modules = sym.size + quiet * 2;
+    var dpr = window.devicePixelRatio || 1;
+    var cssScale = Math.max(4, Math.round((targetPx || 260) / modules));
+    var scale = cssScale * Math.max(1, Math.round(dpr));
+    canvas.width = canvas.height = modules * scale;
+    canvas.style.width = canvas.style.height = (modules * cssScale) + 'px';
+    var ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#000';
+    for (var r = 0; r < sym.size; r++) {
+      for (var c = 0; c < sym.size; c++) {
+        if (sym.modules[r][c]) {
+          ctx.fillRect((c + quiet) * scale, (r + quiet) * scale, scale, scale);
+        }
+      }
+    }
+    return true;
+  }
+
+  function renderProjector() {
+    var typed = el('projUrlInput').value.trim();
+    var url = typed || playerUrl();
+    var big = Math.max(240, Math.round(Math.min(window.innerHeight, window.innerWidth) * 0.42));
+
+    var warn = el('projWarn');
+    var canvas = el('projQr');
+
+    if (!url) {
+      // No usable address yet.
+      warn.classList.remove('hidden');
+      warn.textContent =
+        'This page is open from a file on your computer, so it has no web address ' +
+        'to put in a QR code. Publish it first (see PUBLISH.md), then open the ' +
+        'published page. Or paste the address below to generate the code now.';
+      canvas.classList.add('hidden');
+      el('projUrl').textContent = '';
+      el('projHint').textContent = '';
+      show('projCard');
+      return;
+    }
+
+    if (!/^https?:\/\/./i.test(url)) {
+      warn.classList.remove('hidden');
+      warn.textContent = 'That doesn\'t look like a web address. It should start with https://';
+      canvas.classList.add('hidden');
+      el('projUrl').textContent = '';
+      el('projHint').textContent = '';
+      show('projCard');
+      return;
+    }
+
+    warn.classList.add('hidden');
+    canvas.classList.remove('hidden');
+    el('projUrl').textContent = url;
+    el('projHint').textContent = 'Scan to play. Six questions, about three minutes.';
+    if (!drawQr(canvas, url, big)) {
+      warn.classList.remove('hidden');
+      warn.textContent = 'That address is too long to fit in a QR code.';
+      canvas.classList.add('hidden');
+    }
+    show('projCard');
+  }
+
+  // --- tally ---------------------------------------------------------------
+
+  function addTallyRow(name, score) {
+    var row = document.createElement('div');
+    row.className = 'tallyrow';
+    var n = document.createElement('input');
+    n.type = 'text';
+    n.placeholder = 'Name';
+    n.value = name || '';
+    var s = document.createElement('input');
+    s.type = 'text';
+    s.className = 'sc';
+    s.placeholder = 'Score';
+    s.value = score === undefined ? '' : score;
+    s.inputMode = 'decimal';
+    row.appendChild(n);
+    row.appendChild(s);
+    el('tallyRows').appendChild(row);
+    n.addEventListener('input', renderTallyBoard);
+    s.addEventListener('input', renderTallyBoard);
+    return row;
+  }
+
+  function readTally() {
+    return Array.prototype.map.call(el('tallyRows').children, function (row) {
+      return { name: row.children[0].value, score: row.children[1].value };
+    });
+  }
+
+  function renderTallyBoard() {
+    var ranked = L.rank(readTally());
+    var box = el('tallyBoard');
+    box.innerHTML = '';
+    if (!ranked.length) return;
+
+    var w = L.winners(ranked);
+    if (w.length) {
+      var crown = document.createElement('div');
+      crown.className = 'crown';
+      crown.textContent = w.length === 1
+        ? '🏆 ' + w[0] + ' wins'
+        : '🏆 Joint winners: ' + w.join(' & ');
+      box.appendChild(crown);
+    }
+
+    var table = document.createElement('table');
+    table.className = 'lb';
+    var thead = document.createElement('thead');
+    thead.innerHTML = '<tr><th></th><th>Player</th><th style="text-align:right">Points</th></tr>';
+    table.appendChild(thead);
+    var tb = document.createElement('tbody');
+    ranked.forEach(function (r) {
+      var tr = document.createElement('tr');
+      if (r.rank === 1) tr.className = 'win';
+      var a = document.createElement('td');
+      a.className = 'rank';
+      a.textContent = r.rank;
+      var b = document.createElement('td');
+      b.className = 'nm';
+      b.textContent = r.name;
+      var c = document.createElement('td');
+      c.className = 'pts';
+      c.textContent = r.score.toFixed(2);
+      tr.appendChild(a); tr.appendChild(b); tr.appendChild(c);
+      tb.appendChild(tr);
+    });
+    table.appendChild(tb);
+    box.appendChild(table);
+  }
+
+  function renderTally() {
+    if (!el('tallyRows').children.length) {
+      for (var i = 0; i < 4; i++) addTallyRow();
+    }
+    renderTallyBoard();
+    show('tallyCard');
+  }
+
+  el('addRowBtn').onclick = function () {
+    addTallyRow();
+    el('tallyRows').lastChild.children[0].focus();
+  };
+
+  el('projUrlInput').addEventListener('input', function () {
+    if (!el('projCard').classList.contains('hidden')) renderProjector();
+  });
+
+  // --- routing -------------------------------------------------------------
+
+  function route() {
+    var h = (location.hash || '').replace('#', '');
+    if (h === 'projector') renderProjector();
+    else if (h === 'tally') renderTally();
+    else show('startCard');
+  }
+
+  window.addEventListener('hashchange', route);
+  window.addEventListener('resize', function () {
+    if (!el('projCard').classList.contains('hidden')) renderProjector();
+  });
+  route();
+})();
+</script>
+</body>
+</html>
