@@ -208,7 +208,7 @@
     <div class="submitbox" style="margin-top:0">
       <label for="bulkText">Paste results</label>
       <textarea id="bulkText" rows="5"
-        placeholder="Paste the whole Slack thread here — extra lines, names and timestamps are ignored."></textarea>
+        placeholder="Paste rows from the Google Sheet, or a whole Slack thread. Headers, timestamps and extra columns are ignored."></textarea>
       <button id="bulkBtn" class="btn-full btn-ghost">Read scores from paste</button>
       <div id="bulkMsg" class="submitmsg"></div>
     </div>
@@ -863,9 +863,66 @@
 
   // --- reading results back -------------------------------------------------
 
-  // Pull results out of pasted text. Written to survive a copied Slack thread,
-  // which interleaves display names, timestamps and reactions with the actual
-  // result lines. Anything without a recognisable score is skipped.
+  // A whole field that is only a date, a time, or both.
+  var TIMESTAMP_ONLY =
+    /^(?:\d{1,4}[-/.]\d{1,2}[-/.]\d{1,4})?[\sT,]*(?:\d{1,2}:\d{2}(?::\d{2})?(?:\s*[APap]\.?[Mm]\.?)?)?$/;
+
+  function isTimestampField(s) {
+    var t = String(s).trim();
+    if (!t) return false;
+    if (/[A-Za-z]{2}/.test(t.replace(/[APap]\.?[Mm]\.?/g, ''))) return false;
+    return TIMESTAMP_ONLY.test(t) && /\d/.test(t);
+  }
+
+  var FRACTION_ONLY = /^\d+\s*\/\s*\d+$/;
+  var NUMBER_ONLY = /^\d+(?:\.\d+)?$/;
+
+  // A row copied out of a spreadsheet: tab-separated columns, usually
+  // "Timestamp | Name | Score | Correct". Handled by column rather than by
+  // pattern-matching the whole line, which is far more reliable.
+  function parseColumns(cols) {
+    var used = {};
+    var correct = null;
+    var total = null;
+    var score = null;
+
+    cols.forEach(function (c, i) {
+      if (correct === null && FRACTION_ONLY.test(c)) {
+        var parts = c.split('/');
+        correct = Number(parts[0]);
+        total = Number(parts[1]);
+        used[i] = true;
+      }
+    });
+
+    // Prefer a decimal, since scores carry a fractional bonus.
+    cols.forEach(function (c, i) {
+      if (used[i] || score !== null) return;
+      if (/^\d+\.\d+$/.test(c)) { score = Number(c); used[i] = true; }
+    });
+    cols.forEach(function (c, i) {
+      if (used[i] || score !== null) return;
+      if (NUMBER_ONLY.test(c)) { score = Number(c); used[i] = true; }
+    });
+
+    if (score === null) return null;
+
+    var name = null;
+    cols.forEach(function (c, i) {
+      if (used[i] || name !== null) return;
+      if (isTimestampField(c)) return;
+      if (!/[A-Za-z]/.test(c)) return;
+      name = c.trim();
+    });
+
+    if (!name) return null;
+    return { name: name, score: round2(score), correct: correct, total: total };
+  }
+
+  // Pull results out of pasted text. Written to survive both a copied Slack
+  // thread (display names, timestamps and reactions interleaved with results)
+  // and rows copied straight out of the Google Form responses spreadsheet.
+  // Anything without a recognisable score is skipped.
   function parseResults(text) {
     var lines = String(text || '').split(/\r?\n/);
     var out = [];
@@ -873,14 +930,47 @@
     var duplicates = 0;
     var skipped = 0;
 
+    function record(entry) {
+      if (!entry) { skipped++; return; }
+      var key = entry.name.toLowerCase();
+      if (seen[key]) { duplicates++; return; }
+      seen[key] = true;
+      if (entry.name.length > 40) entry.name = entry.name.slice(0, 40).trim();
+      out.push(entry);
+    }
+
     lines.forEach(function (rawLine) {
       var line = rawLine.replace(/ /g, ' ').trim();
       if (!line) return;
+
+      // A spreadsheet row -- typically "Timestamp | Name | Score | Correct".
+      // Reading it by column is far more reliable than pattern-matching the
+      // whole line, where a date like 7/29/2026 looks like a score fraction.
+      if (line.indexOf('\t') !== -1) {
+        var cols = line.split('\t')
+          .map(function (c) { return c.trim(); })
+          .filter(function (c) { return c !== ''; });
+        if (cols.length >= 2) {
+          var fromCols = parseColumns(cols);
+          if (fromCols) record(fromCols);
+          else skipped++;
+          return;
+        }
+      }
 
       // Slack timestamps on their own line, e.g. "10:32 AM" or "12:05".
       if (/^\d{1,2}:\d{2}(\s*[APap]\.?[Mm]\.?)?$/.test(line)) return;
       // Reaction counts, e.g. ":tada: 3"
       if (/^:[a-z0-9_+-]+:\s*\d*$/i.test(line)) return;
+      // A line that is only a date and/or time.
+      if (isTimestampField(line)) return;
+
+      // Strip a leading timestamp, e.g. a spreadsheet row pasted without tabs.
+      line = line.replace(
+        /^\d{1,4}[-/.]\d{1,2}[-/.]\d{1,4}[\sT,]*(?:\d{1,2}:\d{2}(?::\d{2})?(?:\s*[APap]\.?[Mm]\.?)?)?\s*/,
+        ''
+      ).trim();
+      if (!line) return;
 
       // "5/6" style correct count, captured before we look for the score so the
       // 5 and 6 don't get mistaken for one.
@@ -912,17 +1002,11 @@
         .replace(/^\s*[-–—|,;:]+\s*/, '')
         .trim();
 
-      // Strip a leading Slack display-name duplication like "Asheen Phansey Asheen"
       if (!name) { skipped++; return; }
       // A "name" that's only punctuation or digits isn't a name.
       if (!/[A-Za-z]/.test(name)) { skipped++; return; }
-      if (name.length > 40) name = name.slice(0, 40).trim();
 
-      var key = name.toLowerCase();
-      if (seen[key]) { duplicates++; return; }
-      seen[key] = true;
-
-      out.push({
+      record({
         name: name,
         score: round2(score),
         correct: correct,
