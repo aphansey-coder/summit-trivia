@@ -101,6 +101,18 @@
   .urlbox { margin-top: 20px; text-align: left; }
   .urlbox label { font-size: 12px; text-transform: uppercase; letter-spacing: .8px; }
   .urlbox input { font-size: 15px; }
+
+  .submitbox { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line);
+               text-align: left; }
+  .submitbox label { font-size: 12px; text-transform: uppercase; letter-spacing: .8px; }
+  .submitbox .btn-full { margin-top: 10px; }
+  .submitmsg { margin-top: 10px; font-size: 13px; color: var(--muted); min-height: 18px; }
+  .submitmsg.ok { color: #7ee0a8; }
+  .submitmsg.err { color: #f2919b; }
+  textarea { width: 100%; padding: 12px 14px; font-size: 14px; font-family: inherit;
+    background: var(--card-2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 11px; outline: none; resize: vertical; }
+  textarea:focus { border-color: var(--accent); }
   table.lb { width: 100%; border-collapse: collapse; font-size: 16px; margin-top: 8px; }
   table.lb th { text-align: left; font-size: 12px; text-transform: uppercase;
     letter-spacing: .6px; color: var(--muted); font-weight: 600; padding: 0 8px 8px; }
@@ -157,6 +169,16 @@
       <div class="big" id="doneCallout"></div>
       <div class="detail" id="doneTime"></div>
     </div>
+
+    <div class="submitbox">
+      <label for="resultName">Your name, for the leaderboard</label>
+      <input id="resultName" type="text" maxlength="24" autocomplete="off"
+             autocapitalize="words" placeholder="e.g. Asheen">
+      <button id="formBtn" class="btn-full hidden">Submit my score</button>
+      <button id="copyBtn" class="btn-full btn-ghost">Copy my result</button>
+      <div id="submitMsg" class="submitmsg"></div>
+    </div>
+
     <div class="review" id="review"></div>
     <button id="againBtn" class="btn-full btn-ghost">Start again</button>
   </section>
@@ -179,8 +201,18 @@
   <section id="tallyCard" class="card hidden">
     <h2 class="q" style="margin-bottom:6px">Final scores</h2>
     <p style="color:var(--muted);font-size:14px;margin:0 0 18px">
-      Type each person's name and the score from their phone. The leaderboard sorts itself.
+      Paste the Slack thread below, or type names and scores by hand.
+      The leaderboard sorts itself either way.
     </p>
+
+    <div class="submitbox" style="margin-top:0">
+      <label for="bulkText">Paste results</label>
+      <textarea id="bulkText" rows="5"
+        placeholder="Paste the whole Slack thread here — extra lines, names and timestamps are ignored."></textarea>
+      <button id="bulkBtn" class="btn-full btn-ghost">Read scores from paste</button>
+      <div id="bulkMsg" class="submitmsg"></div>
+    </div>
+
     <div id="tallyRows"></div>
     <button id="addRowBtn" class="btn-ghost" style="padding:9px 14px;font-size:14px">Add another</button>
     <div id="tallyBoard"></div>
@@ -693,6 +725,7 @@
     var list = Array.isArray(parsed) ? parsed : parsed.questions;
     return {
       title: (parsed && parsed.title) || 'Team Trivia',
+      form: (parsed && parsed.form) || null,
       questions: list.map(function (q) {
         var type = q.type === 'true-false' ? 'true-false' : 'multiple-choice';
         return {
@@ -795,6 +828,111 @@
       });
   }
 
+  // --- reporting a result ---------------------------------------------------
+
+  var SEP = ' — ';
+
+  // One line a player can paste anywhere: "Asheen — 5.75 — 5/6"
+  function formatResult(name, summary) {
+    var who = String(name || '').trim() || 'Anonymous';
+    return who + SEP + summary.score.toFixed(2) + SEP +
+      summary.correct + '/' + summary.total;
+  }
+
+  // Prefilled Google Form URL, or null if no form is configured.
+  //
+  // Google Forms prefill works by appending entry.<id>=<value> query params to
+  // the viewform URL. The entry ids come from the form's own "get prefilled
+  // link" feature; see PUBLISH.md.
+  function buildFormUrl(form, name, summary) {
+    if (!form || !form.url) return null;
+    var base = String(form.url).trim();
+    if (!/^https?:\/\//i.test(base)) return null;
+
+    var params = ['usp=pp_url'];
+    function add(field, value) {
+      if (!field) return;
+      params.push(encodeURIComponent(field) + '=' + encodeURIComponent(value));
+    }
+    add(form.nameField, String(name || '').trim() || 'Anonymous');
+    add(form.scoreField, summary.score.toFixed(2));
+    add(form.correctField, summary.correct + '/' + summary.total);
+
+    return base + (base.indexOf('?') === -1 ? '?' : '&') + params.join('&');
+  }
+
+  // --- reading results back -------------------------------------------------
+
+  // Pull results out of pasted text. Written to survive a copied Slack thread,
+  // which interleaves display names, timestamps and reactions with the actual
+  // result lines. Anything without a recognisable score is skipped.
+  function parseResults(text) {
+    var lines = String(text || '').split(/\r?\n/);
+    var out = [];
+    var seen = {};
+    var duplicates = 0;
+    var skipped = 0;
+
+    lines.forEach(function (rawLine) {
+      var line = rawLine.replace(/ /g, ' ').trim();
+      if (!line) return;
+
+      // Slack timestamps on their own line, e.g. "10:32 AM" or "12:05".
+      if (/^\d{1,2}:\d{2}(\s*[APap]\.?[Mm]\.?)?$/.test(line)) return;
+      // Reaction counts, e.g. ":tada: 3"
+      if (/^:[a-z0-9_+-]+:\s*\d*$/i.test(line)) return;
+
+      // "5/6" style correct count, captured before we look for the score so the
+      // 5 and 6 don't get mistaken for one.
+      var correct = null;
+      var total = null;
+      var fraction = line.match(/(\d+)\s*\/\s*(\d+)/);
+      var withoutFraction = line;
+      if (fraction) {
+        correct = Number(fraction[1]);
+        total = Number(fraction[2]);
+        withoutFraction = line.replace(fraction[0], ' ');
+      }
+
+      // The score is the first decimal-looking number, or failing that any
+      // integer. Decimals are strongly preferred since scores carry a bonus.
+      var scoreMatch = withoutFraction.match(/(\d+\.\d+)/) ||
+                       withoutFraction.match(/(?:^|[^\d.])(\d+)(?:[^\d.]|$)/);
+      if (!scoreMatch) { skipped++; return; }
+      var score = Number(scoreMatch[1]);
+      if (!isFinite(score)) { skipped++; return; }
+
+      // The name is whatever comes before the first separator, or before the
+      // score if there isn't one.
+      var head = withoutFraction.slice(0, withoutFraction.indexOf(scoreMatch[1]));
+      var name = head
+        .replace(/[—–|,:;\t]+\s*$/, '')  // trailing separator
+        .replace(/[-–—|,;:]\s*$/, '')
+        .replace(/\s+$/, '')
+        .replace(/^\s*[-–—|,;:]+\s*/, '')
+        .trim();
+
+      // Strip a leading Slack display-name duplication like "Asheen Phansey Asheen"
+      if (!name) { skipped++; return; }
+      // A "name" that's only punctuation or digits isn't a name.
+      if (!/[A-Za-z]/.test(name)) { skipped++; return; }
+      if (name.length > 40) name = name.slice(0, 40).trim();
+
+      var key = name.toLowerCase();
+      if (seen[key]) { duplicates++; return; }
+      seen[key] = true;
+
+      out.push({
+        name: name,
+        score: round2(score),
+        correct: correct,
+        total: total
+      });
+    });
+
+    return { results: out, duplicates: duplicates, skipped: skipped };
+  }
+
   // --- misc -----------------------------------------------------------------
 
   function ordinal(n) {
@@ -814,7 +952,10 @@
     round2: round2,
     rank: rank,
     winners: winners,
-    ordinal: ordinal
+    ordinal: ordinal,
+    formatResult: formatResult,
+    buildFormUrl: buildFormUrl,
+    parseResults: parseResults
   };
 });
 
@@ -823,12 +964,13 @@
 (function () {
   'use strict';
 
-  var ENCODED = 'eyJ0aXRsZSI6IlRlYW0gVHJpdmlhIiwicXVlc3Rpb25zIjpbeyJ0eXBlIjoibXVsdGlwbGUtY2hvaWNlIiwidGV4dCI6IldoaWNoIHBsYW5ldCBpbiBvdXIgc29sYXIgc3lzdGVtIGhhcyB0aGUgbW9zdCBtb29ucz8iLCJvcHRpb25zIjpbIkp1cGl0ZXIiLCJTYXR1cm4iLCJOZXB0dW5lIiwiVXJhbnVzIl0sImFuc3dlciI6MX0seyJ0eXBlIjoidHJ1ZS1mYWxzZSIsInRleHQiOiJUaGUgR3JlYXQgV2FsbCBvZiBDaGluYSBpcyB2aXNpYmxlIGZyb20gdGhlIE1vb24gd2l0aCB0aGUgbmFrZWQgZXllLiIsImFuc3dlciI6MX0seyJ0eXBlIjoibXVsdGlwbGUtY2hvaWNlIiwidGV4dCI6IldoYXQgaXMgdGhlIG1vc3Qgd2lkZWx5IHNwb2tlbiBsYW5ndWFnZSBpbiB0aGUgd29ybGQgYnkgbnVtYmVyIG9mIG5hdGl2ZSBzcGVha2Vycz8iLCJvcHRpb25zIjpbIkVuZ2xpc2giLCJTcGFuaXNoIiwiTWFuZGFyaW4gQ2hpbmVzZSIsIkhpbmRpIl0sImFuc3dlciI6Mn0seyJ0eXBlIjoibXVsdGlwbGUtY2hvaWNlIiwidGV4dCI6IkluIHdoYXQgeWVhciBkaWQgdGhlIGZpcnN0IGlQaG9uZSBnbyBvbiBzYWxlPyIsIm9wdGlvbnMiOlsiMjAwNSIsIjIwMDYiLCIyMDA3IiwiMjAwOCJdLCJhbnN3ZXIiOjJ9LHsidHlwZSI6InRydWUtZmFsc2UiLCJ0ZXh0IjoiSG9uZXkgbmV2ZXIgc3BvaWxzIOKAlCBlZGlibGUgamFycyBvZiBpdCBoYXZlIGJlZW4gZm91bmQgaW4gYW5jaWVudCB0b21icy4iLCJhbnN3ZXIiOjB9LHsidHlwZSI6Im11bHRpcGxlLWNob2ljZSIsInRleHQiOiJXaGljaCBvZiB0aGVzZSBpcyBOT1QgYSBwcmltYXJ5IGNvbG91ciBvZiBsaWdodD8iLCJvcHRpb25zIjpbIlJlZCIsIkdyZWVuIiwiWWVsbG93IiwiQmx1ZSJdLCJhbnN3ZXIiOjJ9XX0=';
+  var ENCODED = 'eyJ0aXRsZSI6IlRlYW0gVHJpdmlhIiwiZm9ybSI6eyJfY29tbWVudCI6Ik9wdGlvbmFsLiBGaWxsIHRoZXNlIGluIHRvIGFkZCBhICdTdWJtaXQgbXkgc2NvcmUnIGJ1dHRvbiB0aGF0IG9wZW5zIGEgcHJlZmlsbGVkIEdvb2dsZSBGb3JtLiBMZWF2ZSB1cmwgZW1wdHkgdG8gaGlkZSB0aGUgYnV0dG9uLiBTZWUgUFVCTElTSC5tZCBmb3IgaG93IHRvIGZpbmQgdGhlIGVudHJ5IGlkcy4iLCJ1cmwiOiIiLCJuYW1lRmllbGQiOiIiLCJzY29yZUZpZWxkIjoiIiwiY29ycmVjdEZpZWxkIjoiIn0sInF1ZXN0aW9ucyI6W3sidHlwZSI6Im11bHRpcGxlLWNob2ljZSIsInRleHQiOiJXaGljaCBwbGFuZXQgaW4gb3VyIHNvbGFyIHN5c3RlbSBoYXMgdGhlIG1vc3QgbW9vbnM/Iiwib3B0aW9ucyI6WyJKdXBpdGVyIiwiU2F0dXJuIiwiTmVwdHVuZSIsIlVyYW51cyJdLCJhbnN3ZXIiOjF9LHsidHlwZSI6InRydWUtZmFsc2UiLCJ0ZXh0IjoiVGhlIEdyZWF0IFdhbGwgb2YgQ2hpbmEgaXMgdmlzaWJsZSBmcm9tIHRoZSBNb29uIHdpdGggdGhlIG5ha2VkIGV5ZS4iLCJhbnN3ZXIiOjF9LHsidHlwZSI6Im11bHRpcGxlLWNob2ljZSIsInRleHQiOiJXaGF0IGlzIHRoZSBtb3N0IHdpZGVseSBzcG9rZW4gbGFuZ3VhZ2UgaW4gdGhlIHdvcmxkIGJ5IG51bWJlciBvZiBuYXRpdmUgc3BlYWtlcnM/Iiwib3B0aW9ucyI6WyJFbmdsaXNoIiwiU3BhbmlzaCIsIk1hbmRhcmluIENoaW5lc2UiLCJIaW5kaSJdLCJhbnN3ZXIiOjJ9LHsidHlwZSI6Im11bHRpcGxlLWNob2ljZSIsInRleHQiOiJJbiB3aGF0IHllYXIgZGlkIHRoZSBmaXJzdCBpUGhvbmUgZ28gb24gc2FsZT8iLCJvcHRpb25zIjpbIjIwMDUiLCIyMDA2IiwiMjAwNyIsIjIwMDgiXSwiYW5zd2VyIjoyfSx7InR5cGUiOiJ0cnVlLWZhbHNlIiwidGV4dCI6IkhvbmV5IG5ldmVyIHNwb2lscyDigJQgZWRpYmxlIGphcnMgb2YgaXQgaGF2ZSBiZWVuIGZvdW5kIGluIGFuY2llbnQgdG9tYnMuIiwiYW5zd2VyIjowfSx7InR5cGUiOiJtdWx0aXBsZS1jaG9pY2UiLCJ0ZXh0IjoiV2hpY2ggb2YgdGhlc2UgaXMgTk9UIGEgcHJpbWFyeSBjb2xvdXIgb2YgbGlnaHQ/Iiwib3B0aW9ucyI6WyJSZWQiLCJHcmVlbiIsIlllbGxvdyIsIkJsdWUiXSwiYW5zd2VyIjoyfV19';
   var L = window.QuizLogic;
   var el = function (id) { return document.getElementById(id); };
 
   var pack = L.decodeQuestions(ENCODED);
   var QUESTIONS = pack.questions;
+  var FORM = pack.form || null;
   var TOTAL = QUESTIONS.length;
   var LETTERS = ['A', 'B', 'C', 'D', 'E', 'F'];
 
@@ -963,8 +1105,70 @@
     });
     box.appendChild(ol);
 
+    // Reporting controls
+    state.summary = s;
+    el('resultName').value = state.name || '';
+    el('submitMsg').textContent = '';
+    el('submitMsg').className = 'submitmsg';
+    el('formBtn').classList.toggle('hidden', !L.buildFormUrl(FORM, 'x', s));
+
     show('doneCard');
   }
+
+  function resultLine() {
+    return L.formatResult(el('resultName').value, state.summary);
+  }
+
+  function needsName() {
+    if (String(el('resultName').value || '').trim()) return false;
+    var m = el('submitMsg');
+    m.textContent = 'Add your name first, so your score can be matched to you.';
+    m.className = 'submitmsg err';
+    el('resultName').focus();
+    return true;
+  }
+
+  el('copyBtn').onclick = function () {
+    if (needsName()) return;
+    var text = resultLine();
+    var m = el('submitMsg');
+
+    function done() {
+      m.textContent = 'Copied: "' + text + '" — now paste it into the Slack thread.';
+      m.className = 'submitmsg ok';
+    }
+    function fallback() {
+      // Older browsers, or a page not considered secure.
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      document.body.removeChild(ta);
+      if (ok) done();
+      else {
+        m.textContent = 'Couldn\'t copy automatically. Your result is: ' + text;
+        m.className = 'submitmsg';
+      }
+    }
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, fallback);
+    } else {
+      fallback();
+    }
+  };
+
+  el('formBtn').onclick = function () {
+    if (needsName()) return;
+    var url = L.buildFormUrl(FORM, el('resultName').value, state.summary);
+    if (!url) return;
+    var m = el('submitMsg');
+    m.textContent = 'Opening the form — check the details, then press Submit.';
+    m.className = 'submitmsg ok';
+    window.open(url, '_blank');
+  };
 
   el('startBtn').onclick = function () {
     state = {
@@ -1166,6 +1370,56 @@
   el('projUrlInput').addEventListener('input', function () {
     if (!el('projCard').classList.contains('hidden')) renderProjector();
   });
+
+  el('bulkBtn').onclick = function () {
+    var parsed = L.parseResults(el('bulkText').value);
+    var msg = el('bulkMsg');
+
+    if (!parsed.results.length) {
+      msg.textContent = 'Couldn\'t find any scores in that. Each result should look ' +
+                        'like "Asheen — 5.75 — 5/6".';
+      msg.className = 'submitmsg err';
+      return;
+    }
+
+    var rows = Array.prototype.slice.call(el('tallyRows').children);
+
+    // Names already on the sheet, so pasting the thread twice doesn't create
+    // duplicate entries.
+    var existing = {};
+    rows.forEach(function (r) {
+      var n = r.children[0].value.trim().toLowerCase();
+      if (n) existing[n] = true;
+    });
+
+    // Reuse blank rows before adding new ones, so there are no gaps.
+    var blanks = rows.filter(function (r) { return !r.children[0].value.trim(); });
+
+    var added = 0;
+    var alreadyThere = 0;
+    parsed.results.forEach(function (r) {
+      if (existing[r.name.toLowerCase()]) { alreadyThere++; return; }
+      existing[r.name.toLowerCase()] = true;
+      added++;
+      var row = blanks.shift();
+      if (row) {
+        row.children[0].value = r.name;
+        row.children[1].value = r.score.toFixed(2);
+      } else {
+        addTallyRow(r.name, r.score.toFixed(2));
+      }
+    });
+
+    var bits = ['Read ' + added + (added === 1 ? ' score' : ' scores')];
+    var repeats = parsed.duplicates + alreadyThere;
+    if (repeats) {
+      bits.push(repeats + ' already recorded, ignored');
+    }
+    msg.textContent = bits.join(', ') + '.';
+    msg.className = 'submitmsg ' + (added ? 'ok' : '');
+
+    renderTallyBoard();
+  };
 
   // --- routing -------------------------------------------------------------
 
