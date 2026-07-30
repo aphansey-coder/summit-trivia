@@ -965,6 +965,28 @@
     return base + (base.indexOf('?') === -1 ? '?' : '&') + params.join('&');
   }
 
+  // The endpoint a Google Form accepts submissions on. Same URL as the visible
+  // form with /viewform swapped for /formResponse. Posting the entry fields to
+  // it records a response without the player ever seeing the form.
+  function formPostUrl(form) {
+    if (!form || !form.url) return null;
+    var base = String(form.url).trim();
+    if (!/^https?:\/\//i.test(base)) return null;
+    base = base.split('?')[0].replace(/\/+$/, '');
+    if (!/\/viewform$/i.test(base) && !/\/formResponse$/i.test(base)) return null;
+    return base.replace(/\/viewform$/i, '/formResponse');
+  }
+
+  // The field/value pairs to post, as a plain object.
+  function formFields(form, name, summary) {
+    if (!form) return {};
+    var out = {};
+    if (form.nameField) out[form.nameField] = String(name || '').trim() || 'Anonymous';
+    if (form.scoreField) out[form.scoreField] = summary.score.toFixed(2);
+    if (form.correctField) out[form.correctField] = summary.correct + '/' + summary.total;
+    return out;
+  }
+
   // --- reading results back -------------------------------------------------
 
   // A whole field that is only a date, a time, or both.
@@ -1143,6 +1165,8 @@
     ordinal: ordinal,
     formatResult: formatResult,
     buildFormUrl: buildFormUrl,
+    formPostUrl: formPostUrl,
+    formFields: formFields,
     parseResults: parseResults
   };
 });
@@ -1152,7 +1176,7 @@
 (function () {
   'use strict';
 
-  var ENCODED = 'eyJ0aXRsZSI6IkNsYXVkZSBUcmFpbmluZyBUcml2aWEiLCJmb3JtIjp7Il9jb21tZW50IjoiQWRkcyBhICdTdWJtaXQgbXkgc2NvcmUnIGJ1dHRvbiB0aGF0IG9wZW5zIHRoaXMgR29vZ2xlIEZvcm0gcHJlZmlsbGVkLiBFbnRyeSBpZHMgY29tZSBmcm9tIHRoZSBmb3JtJ3MgJ0dldCBwcmUtZmlsbGVkIGxpbmsnLiBMZWF2ZSB1cmwgZW1wdHkgdG8gaGlkZSB0aGUgYnV0dG9uLiIsInVybCI6Imh0dHBzOi8vZG9jcy5nb29nbGUuY29tL2Zvcm1zL2QvZS8xRkFJcFFMU2NGb3pfSTVhQjZQekRHc3dVSHBIeFhuM0JGQ21wa055THZhYjFya0pDdWViWXZJZy92aWV3Zm9ybSIsIm5hbWVGaWVsZCI6ImVudHJ5LjE3NjA5MDc3MjAiLCJzY29yZUZpZWxkIjoiZW50cnkuOTQzOTM0NTY2IiwiY29ycmVjdEZpZWxkIjoiZW50cnkuNjQ2MDAzNTgzIn0sIl9ub3RlcyI6WyJEaWZmaWN1bHR5IHJpc2VzIGluIHRocmVlIHRpZXJzOiAxLTMgd2FybS11cCwgNC03IG1lZGl1bSwgOC0xMCBoYXJkLiIsIkVhY2ggcXVlc3Rpb24gaGFzIG9uZSBjb3JyZWN0IGFuc3dlciwgb25lIHBsYXVzaWJsZSBkaXN0cmFjdG9yLCBvbmUgd2Vha2VyIiwiZGlzdHJhY3RvciwgYW5kIG9uZSBkZWxpYmVyYXRlbHkgc2lsbHkgb3B0aW9uLiIsIkNvcnJlY3QgYW5zd2VycyBhcmUgc3ByZWFkIGFjcm9zcyBhbGwgZm91ciBwb3NpdGlvbnMgb24gcHVycG9zZS4gUnVuIiwibm9kZSB0ZXN0LXN0YXRpYy5qcyBhZnRlciBlZGl0aW5nIC0tIGl0IGZhaWxzIGlmIG9uZSBwb3NpdGlvbiBiZWNvbWVzIGEiLCJnaXZlYXdheS4iXSwicXVlc3Rpb25zIjpbeyJ0eXBlIjoibXVsdGlwbGUtY2hvaWNlIiwidGV4dCI6IllvdSB1c2UgQ2xhdWRlIHRvIGRyYWZ0IGEgc3VtbWFyeSB0aGF0IHdpbGwgZ28gdG8gYSBjdXN0b21lci4gV2hvIGlzIHJlc3BvbnNpYmxlIGZvciB3aGF0IGl0IHNheXM/Iiwib3B0aW9ucyI6WyJBbnRocm9waWMsIHNpbmNlIENsYXVkZSB3cm90ZSBpdCIsIlRoZSBFbnRlcnByaXNlIERhdGEgdGVhbSIsIllvdSBhcmUiLCJXaG9ldmVyIGZvcndhcmRzIGl0IGZpcnN0Il0sImFuc3dlciI6Mn0seyJ0eXBlIjoibXVsdGlwbGUtY2hvaWNlIiwidGV4dCI6IkhvdyBkbyB5b3Ugc2lnbiBpbiB0byBDbGF1ZGUgZm9yIFBhZ2VyRHV0eSB3b3JrPyIsIm9wdGlvbnMiOlsiVGhyb3VnaCBNaWNyb3NvZnQgRW50cmEgSUQsIHN0YXJ0aW5nIGF0IG15YXBwcy5taWNyb3NvZnQuY29tIiwiQ3JlYXRlIGEgQ2xhdWRlIGFjY291bnQgdXNpbmcgeW91ciBQYWdlckR1dHkgZW1haWwiLCJVc2Ugd2hpY2hldmVyIENsYXVkZSBhY2NvdW50IHlvdSBhbHJlYWR5IGhhdmUiLCJBc2sgU1BBUktZIHRvIGxvZyBpbiBvbiB5b3VyIGJlaGFsZiJdLCJhbnN3ZXIiOjB9LHsidHlwZSI6Im11bHRpcGxlLWNob2ljZSIsInRleHQiOiJCZWZvcmUgeW91IHBhc3RlLCBhdHRhY2gsIG9yIGNvbm5lY3QgYW55dGhpbmcsIHRoZSB0cmFpbmluZydzIHJ1bGUgb2YgdGh1bWIgaXMgdG8gYXNrIHlvdXJzZWxmOiIsIm9wdGlvbnMiOlsiSXMgdGhpcyBkb2N1bWVudCB1bmRlciA1MDAgd29yZHM/IiwiV291bGQgUGFnZXkgYXBwcm92ZT8iLCJIYXMgdGhpcyBhbHJlYWR5IGJlZW4gcHVibGlzaGVkIGV4dGVybmFsbHk/IiwiV291bGQgdGhpcyBpbmZvcm1hdGlvbiBiZSBhcHByb3ByaWF0ZSBpbiBhIGJyb2FkbHkgc2hhcmVkIGNvbXBhbnkgZG9jdW1lbnQ/Il0sImFuc3dlciI6M30seyJ0eXBlIjoibXVsdGlwbGUtY2hvaWNlIiwidGV4dCI6IldoaWNoIHBhdHRlcm4gZG9lcyB0aGUgdHJhaW5pbmcgdXNlIHRvIGRlY2lkZSB3aGV0aGVyLCBhbmQgd2hlcmUsIHRvIHVzZSBDbGF1ZGUgYXQgYWxsPyIsIm9wdGlvbnMiOlsiRHJhZnQsIFN5bnRoZXNpemUsIFZlcmlmeSIsIlN1cmZhY2UsIElucHV0cywgTW92ZSIsIlJlYWR5LCBBaW0sIFByb21wdCIsIlBsYW4sIEV4ZWN1dGUsIFJldmlldyJdLCJhbnN3ZXIiOjF9LHsidHlwZSI6Im11bHRpcGxlLWNob2ljZSIsInRleHQiOiJJbiB0aGUgdHJhaW5pbmcncyBkYXRhIHRhYmxlLCB3aGljaCBvZiB0aGVzZSBiZWxvbmdzIGluIHRoZSBcIkNoZWNrIHdpdGggTGVnYWxcIiBjb2x1bW4/Iiwib3B0aW9ucyI6WyJBbnl0aGluZyBsb25nZXIgdGhhbiB0ZW4gcGFnZXMiLCJJbnRlcm5hbCBzdHJhdGVneSBkb2N1bWVudHMiLCJBcHByb3ZlZCB0ZW1wbGF0ZXMgYW5kIGdlbmVyaWMgcm9sZS1wbGF5IiwiQ3VzdG9tZXIgUElJLCBpbmNpZGVudHMgYW5kIGNvbnRyYWN0cyJdLCJhbnN3ZXIiOjN9LHsidHlwZSI6Im11bHRpcGxlLWNob2ljZSIsInRleHQiOiJPdXRzaWRlIHByb2R1Y3QgZGV2ZWxvcG1lbnQsIHJvdWdobHkgd2hhdCBtb250aGx5IENsYXVkZSB1c2FnZSBidWRnZXQgZG9lcyB0aGUgdHJhaW5pbmcgc2F5IHBlb3BsZSBnZXQ/Iiwib3B0aW9ucyI6WyJBYm91dCAkMTUwIG9mIHVzYWdlIHBlciBtb250aCIsIkl0J3MgdW5saW1pdGVkIGZvciBhbGwgZW1wbG95ZWVzIiwiT25lIGZyZWUgcXVlc3Rpb24gcGVyIGJ1c2luZXNzIGRheSIsIkFib3V0ICQxNSBvZiB1c2FnZSBwZXIgbW9udGgiXSwiYW5zd2VyIjowfSx7InR5cGUiOiJtdWx0aXBsZS1jaG9pY2UiLCJ0ZXh0IjoiSW4gQ293b3JrLCB3aGljaCBhcHByb3ZhbCBzZXR0aW5nIGRvZXMgdGhlIHRyYWluaW5nIHJlY29tbWVuZCBhcyB0aGUgZGVmYXVsdCBmb3IgY29tcGFueSB3b3JrPyIsIm9wdGlvbnMiOlsiQWN0IHdpdGhvdXQgYXNraW5nLCBzbyB0aGUgdGFzayBmaW5pc2hlcyBmYXN0ZXIiLCJXaGF0ZXZlciBDbGF1ZGUgdGhpbmtzIGlzIGJlc3Qgb24gdGhlIGRheSIsIkFzayBiZWZvcmUgYWN0aW5nIiwiQXBwcm92ZSBldmVyeXRoaW5nIGluIG9uZSBiYXRjaCBhdCB0aGUgZW5kIl0sImFuc3dlciI6Mn0seyJ0eXBlIjoibXVsdGlwbGUtY2hvaWNlIiwidGV4dCI6IkVtcGxveWVlIGluZm9ybWF0aW9uIOKAlCBQSUksIHBlcmZvcm1hbmNlLCByZWxhdGlvbnMg4oCUIGlzIENvbmZpZGVudGlhbCB1bmRlciB0aGUgQUkgVXNlIEludGVybmFsIFBvbGljeS4gVGhlIHRyYWluaW5nIHNheXMgaXQgbWF5IGJlIHVzZWQgaWY6Iiwib3B0aW9ucyI6WyJOZXZlciwgdW5kZXIgYW55IGNpcmN1bXN0YW5jZXMiLCJBIGh1bWFuIHJldmlld3MgdGhlIG91dHB1dCwgaW5jbHVkaW5nIGZvciBiaWFzLCBhbmQgaXMgdGhlIHVsdGltYXRlIGRlY2lzaW9uLW1ha2VyIiwiSXQgaXMgYW5vbnltaXNlZCBiZWZvcmUgeW91IHBhc3RlIGl0IiwiSXQgc3RheXMgaW5zaWRlIGEgUHJvamVjdCByYXRoZXIgdGhhbiBhIGNoYXQiXSwiYW5zd2VyIjoxfSx7InR5cGUiOiJtdWx0aXBsZS1jaG9pY2UiLCJ0ZXh0IjoiV2hhdCBpcyBwcm9tcHQgaW5qZWN0aW9uPyIsIm9wdGlvbnMiOlsiU2VuZGluZyB0aGUgc2FtZSBwcm9tcHQgdG8gc2V2ZXJhbCBtb2RlbHMgYXQgb25jZSB0byBjb21wYXJlIHRoZW0iLCJBZGRpbmcgY2FmZmVpbmUgdG8gdGhlIGRhdGEgY2VudHJlIiwiUHJlLWxvYWRpbmcgY29udGV4dCBzbyByZXBsaWVzIGNvbWUgYmFjayBmYXN0ZXIiLCJIaWRkZW4gaW5zdHJ1Y3Rpb25zIGluc2lkZSBjb250ZW50IENsYXVkZSByZWFkcywgYWltZWQgYXQgQ2xhdWRlIHJhdGhlciB0aGFuIGF0IHlvdSJdLCJhbnN3ZXIiOjN9LHsidHlwZSI6Im11bHRpcGxlLWNob2ljZSIsInRleHQiOiJJZiB5b3VyIHdvcmtzcGFjZSBoYXMgRmFibGUgNSwgd2hhdCBkb2VzIHRoZSB0cmFpbmluZyBzYXkgaGFwcGVucyBvbiBhIHNtYWxsIHNldCBvZiBzZW5zaXRpdmUgY3liZXJzZWN1cml0eSBhbmQgYmlvbG9neSByZXF1ZXN0cz8iLCJvcHRpb25zIjpbIkl0IGhhbmRzIHRoZSBhbnN3ZXIgdG8gT3B1cyA0LjggaW5zdGVhZCDigJQgYSBidWlsdC1pbiBzYWZldHkgYmVoYXZpb3VyLCBub3QgYW4gZXJyb3IiLCJJdCByZWZ1c2VzIGFuZCBjbG9zZXMgdGhlIGNvbnZlcnNhdGlvbiIsIkl0IGFuc3dlcnMsIGJ1dCBvbmx5IGluIGludGVycHJldGl2ZSBkYW5jZSIsIkl0IHJvdXRlcyB0aGUgcmVxdWVzdCB0byBhIGh1bWFuIHJldmlld2VyIGF0IEFudGhyb3BpYyJdLCJhbnN3ZXIiOjB9XX0=';
+  var ENCODED = 'eyJ0aXRsZSI6IkNsYXVkZSBUcmFpbmluZyBUcml2aWEiLCJmb3JtIjp7Il9jb21tZW50IjoiQWRkcyBhICdTdWJtaXQgbXkgc2NvcmUnIGJ1dHRvbiB0aGF0IG9wZW5zIHRoaXMgR29vZ2xlIEZvcm0gcHJlZmlsbGVkLiBFbnRyeSBpZHMgY29tZSBmcm9tIHRoZSBmb3JtJ3MgJ0dldCBwcmUtZmlsbGVkIGxpbmsnLiBMZWF2ZSB1cmwgZW1wdHkgdG8gaGlkZSB0aGUgYnV0dG9uLiIsInVybCI6Imh0dHBzOi8vZG9jcy5nb29nbGUuY29tL2Zvcm1zL2QvZS8xRkFJcFFMU2NGb3pfSTVhQjZQekRHc3dVSHBIeFhuM0JGQ21wa055THZhYjFya0pDdWViWXZJZy92aWV3Zm9ybSIsIm5hbWVGaWVsZCI6ImVudHJ5LjE3NjA5MDc3MjAiLCJzY29yZUZpZWxkIjoiZW50cnkuOTQzOTM0NTY2IiwiY29ycmVjdEZpZWxkIjoiZW50cnkuNjQ2MDAzNTgzIn0sIl9ub3RlcyI6WyJJTVBPUlRBTlQ6ICdhbnN3ZXInIGlzIGEgWkVSTy1CQVNFRCBpbmRleCBpbnRvIG9wdGlvbnMuIiwiICBhbnN3ZXIgMCA9IGZpcnN0IG9wdGlvbiwgMSA9IHNlY29uZCwgMiA9IHRoaXJkLCAzID0gZm91cnRoLiIsIiAgUnVuICdub2RlIGJ1aWxkLXN0YXRpYy5qcycgYW5kIGl0IHByaW50cyBlYWNoIGNvcnJlY3QgYW5zd2VyIGFzIHRleHQsIiwiICBzbyB5b3UgY2FuIGNvbmZpcm0gaXQgcmVhZHMgdGhlIHdheSB5b3UgaW50ZW5kZWQuIiwiIiwiRGlmZmljdWx0eSByaXNlcyBpbiB0aHJlZSB0aWVyczogMS0zIHdhcm0tdXAsIDQtNyBtZWRpdW0sIDgtMTAgaGFyZC4iLCJFYWNoIHF1ZXN0aW9uIGhhcyBvbmUgY29ycmVjdCBhbnN3ZXIsIG9uZSBwbGF1c2libGUgZGlzdHJhY3Rvciwgb25lIHdlYWtlciIsImRpc3RyYWN0b3IsIGFuZCBvbmUgZGVsaWJlcmF0ZWx5IHNpbGx5IG9wdGlvbi4iLCJDb3JyZWN0IGFuc3dlcnMgYXJlIHNwcmVhZCBhY3Jvc3MgYWxsIGZvdXIgcG9zaXRpb25zIG9uIHB1cnBvc2UuIiwiJ25vZGUgdGVzdC1zdGF0aWMuanMnIGZhaWxzIGlmIG9uZSBwb3NpdGlvbiBiZWNvbWVzIGEgZ2l2ZWF3YXkuIl0sInF1ZXN0aW9ucyI6W3sidHlwZSI6Im11bHRpcGxlLWNob2ljZSIsInRleHQiOiJZb3UgdXNlIENsYXVkZSB0byBkcmFmdCBhIHN1bW1hcnkgdGhhdCB3aWxsIGdvIHRvIGEgY3VzdG9tZXIuIFdobyBpcyByZXNwb25zaWJsZSBmb3Igd2hhdCBpdCBzYXlzPyIsIm9wdGlvbnMiOlsiQW50aHJvcGljLCBzaW5jZSBDbGF1ZGUgd3JvdGUgaXQiLCJUaGUgRW50ZXJwcmlzZSBEYXRhIHRlYW0iLCJZb3UgYXJlIiwiV2hvZXZlciBmb3J3YXJkcyBpdCBmaXJzdCJdLCJhbnN3ZXIiOjJ9LHsidHlwZSI6Im11bHRpcGxlLWNob2ljZSIsInRleHQiOiJIb3cgZG8geW91IHNpZ24gaW4gdG8gQ2xhdWRlIGZvciBQYWdlckR1dHkgd29yaz8iLCJvcHRpb25zIjpbIlRocm91Z2ggTWljcm9zb2Z0IEVudHJhIElELCBzdGFydGluZyBhdCBteWFwcHMubWljcm9zb2Z0LmNvbSIsIkNyZWF0ZSBhIENsYXVkZSBhY2NvdW50IHVzaW5nIHlvdXIgUGFnZXJEdXR5IGVtYWlsIiwiVXNlIHdoaWNoZXZlciBDbGF1ZGUgYWNjb3VudCB5b3UgYWxyZWFkeSBoYXZlIiwiQXNrIFNQQVJLWSB0byBsb2cgaW4gb24geW91ciBiZWhhbGYiXSwiYW5zd2VyIjowfSx7InR5cGUiOiJtdWx0aXBsZS1jaG9pY2UiLCJ0ZXh0IjoiQmVmb3JlIHlvdSBwYXN0ZSwgYXR0YWNoLCBvciBjb25uZWN0IGFueXRoaW5nLCB0aGUgdHJhaW5pbmcncyBydWxlIG9mIHRodW1iIGlzIHRvIGFzayB5b3Vyc2VsZjoiLCJvcHRpb25zIjpbIklzIHRoaXMgZG9jdW1lbnQgdW5kZXIgNTAwIHdvcmRzPyIsIldvdWxkIFBhZ2V5IGFwcHJvdmU/IiwiSGFzIHRoaXMgYWxyZWFkeSBiZWVuIHB1Ymxpc2hlZCBleHRlcm5hbGx5PyIsIldvdWxkIHRoaXMgaW5mb3JtYXRpb24gYmUgYXBwcm9wcmlhdGUgaW4gYSBicm9hZGx5IHNoYXJlZCBjb21wYW55IGRvY3VtZW50PyJdLCJhbnN3ZXIiOjN9LHsidHlwZSI6Im11bHRpcGxlLWNob2ljZSIsInRleHQiOiJXaGljaCBwYXR0ZXJuIGRvZXMgdGhlIHRyYWluaW5nIHVzZSB0byBkZWNpZGUgd2hldGhlciwgYW5kIHdoZXJlLCB0byB1c2UgQ2xhdWRlIGF0IGFsbD8iLCJvcHRpb25zIjpbIkRyYWZ0LCBTeW50aGVzaXplLCBWZXJpZnkiLCJTdXJmYWNlLCBJbnB1dHMsIE1vdmUiLCJSZWFkeSwgQWltLCBQcm9tcHQiLCJQbGFuLCBFeGVjdXRlLCBSZXZpZXciXSwiYW5zd2VyIjoxfSx7InR5cGUiOiJtdWx0aXBsZS1jaG9pY2UiLCJ0ZXh0IjoiSW4gdGhlIHRyYWluaW5nJ3MgZGF0YSB0YWJsZSwgd2hpY2ggb2YgdGhlc2UgYmVsb25ncyBpbiB0aGUgXCJDaGVjayB3aXRoIExlZ2FsXCIgY29sdW1uPyIsIm9wdGlvbnMiOlsiQW55dGhpbmcgbG9uZ2VyIHRoYW4gdGVuIHBhZ2VzIiwiSW50ZXJuYWwgc3RyYXRlZ3kgZG9jdW1lbnRzIiwiQXBwcm92ZWQgdGVtcGxhdGVzIGFuZCBnZW5lcmljIHJvbGUtcGxheSIsIkN1c3RvbWVyIFBJSSwgaW5jaWRlbnRzIGFuZCBjb250cmFjdHMiXSwiYW5zd2VyIjozfSx7InR5cGUiOiJtdWx0aXBsZS1jaG9pY2UiLCJ0ZXh0IjoiT3V0c2lkZSBwcm9kdWN0IGRldmVsb3BtZW50LCByb3VnaGx5IHdoYXQgbW9udGhseSBDbGF1ZGUgdXNhZ2UgYnVkZ2V0IGRvZXMgdGhlIHRyYWluaW5nIHNheSBwZW9wbGUgZ2V0PyIsIm9wdGlvbnMiOlsiQWJvdXQgJDE1MCBvZiB1c2FnZSBwZXIgbW9udGgiLCJJdCdzIHVubGltaXRlZCBmb3IgYWxsIGVtcGxveWVlcyIsIk9uZSBmcmVlIHF1ZXN0aW9uIHBlciBidXNpbmVzcyBkYXkiLCJBYm91dCAkMTUgb2YgdXNhZ2UgcGVyIG1vbnRoIl0sImFuc3dlciI6MH0seyJ0eXBlIjoibXVsdGlwbGUtY2hvaWNlIiwidGV4dCI6IkluIENvd29yaywgd2hpY2ggYXBwcm92YWwgc2V0dGluZyBkb2VzIHRoZSB0cmFpbmluZyByZWNvbW1lbmQgYXMgdGhlIGRlZmF1bHQgZm9yIGNvbXBhbnkgd29yaz8iLCJvcHRpb25zIjpbIkFjdCB3aXRob3V0IGFza2luZywgc28gdGhlIHRhc2sgZmluaXNoZXMgZmFzdGVyIiwiV2hhdGV2ZXIgQ2xhdWRlIHRoaW5rcyBpcyBiZXN0IG9uIHRoZSBkYXkiLCJBc2sgYmVmb3JlIGFjdGluZyIsIkFwcHJvdmUgZXZlcnl0aGluZyBpbiBvbmUgYmF0Y2ggYXQgdGhlIGVuZCJdLCJhbnN3ZXIiOjJ9LHsidHlwZSI6Im11bHRpcGxlLWNob2ljZSIsInRleHQiOiJFbXBsb3llZSBpbmZvcm1hdGlvbiDigJQgUElJLCBwZXJmb3JtYW5jZSwgcmVsYXRpb25zIOKAlCBpcyBDb25maWRlbnRpYWwgdW5kZXIgdGhlIEFJIFVzZSBJbnRlcm5hbCBQb2xpY3kuIFRoZSB0cmFpbmluZyBzYXlzIGl0IG1heSBiZSB1c2VkIGlmOiIsIm9wdGlvbnMiOlsiTmV2ZXIsIHVuZGVyIGFueSBjaXJjdW1zdGFuY2VzIiwiQSBodW1hbiByZXZpZXdzIHRoZSBvdXRwdXQsIGluY2x1ZGluZyBmb3IgYmlhcywgYW5kIGlzIHRoZSB1bHRpbWF0ZSBkZWNpc2lvbi1tYWtlciIsIkl0IGlzIGFub255bWlzZWQgYmVmb3JlIHlvdSBwYXN0ZSBpdCIsIkl0IHN0YXlzIGluc2lkZSBhIFByb2plY3QgcmF0aGVyIHRoYW4gYSBjaGF0Il0sImFuc3dlciI6MX0seyJ0eXBlIjoibXVsdGlwbGUtY2hvaWNlIiwidGV4dCI6IldoYXQgaXMgcHJvbXB0IGluamVjdGlvbj8iLCJvcHRpb25zIjpbIlNlbmRpbmcgdGhlIHNhbWUgcHJvbXB0IHRvIHNldmVyYWwgbW9kZWxzIGF0IG9uY2UgdG8gY29tcGFyZSB0aGVtIiwiQWRkaW5nIGNhZmZlaW5lIHRvIHRoZSBkYXRhIGNlbnRyZSIsIlByZS1sb2FkaW5nIGNvbnRleHQgc28gcmVwbGllcyBjb21lIGJhY2sgZmFzdGVyIiwiSGlkZGVuIGluc3RydWN0aW9ucyBpbnNpZGUgY29udGVudCBDbGF1ZGUgcmVhZHMsIGFpbWVkIGF0IENsYXVkZSByYXRoZXIgdGhhbiBhdCB5b3UiXSwiYW5zd2VyIjozfSx7InR5cGUiOiJtdWx0aXBsZS1jaG9pY2UiLCJ0ZXh0IjoiSWYgeW91ciB3b3Jrc3BhY2UgaGFzIEZhYmxlIDUsIHdoYXQgZG9lcyB0aGUgdHJhaW5pbmcgc2F5IGhhcHBlbnMgb24gYSBzbWFsbCBzZXQgb2Ygc2Vuc2l0aXZlIGN5YmVyc2VjdXJpdHkgYW5kIGJpb2xvZ3kgcmVxdWVzdHM/Iiwib3B0aW9ucyI6WyJJdCBoYW5kcyB0aGUgYW5zd2VyIHRvIE9wdXMgNC44IGluc3RlYWQg4oCUIGEgYnVpbHQtaW4gc2FmZXR5IGJlaGF2aW91ciwgbm90IGFuIGVycm9yIiwiSXQgcmVmdXNlcyBhbmQgY2xvc2VzIHRoZSBjb252ZXJzYXRpb24iLCJJdCBhbnN3ZXJzLCBidXQgb25seSBpbiBpbnRlcnByZXRpdmUgZGFuY2UiLCJJdCByb3V0ZXMgdGhlIHJlcXVlc3QgdG8gYSBodW1hbiByZXZpZXdlciBhdCBBbnRocm9waWMiXSwiYW5zd2VyIjowfV19';
   var HAS_WORDMARK = true;
   var HAS_MASCOT = true;
   var HAS_SF = true;
@@ -1320,11 +1344,27 @@
     // Reporting controls
     state.summary = s;
     el('resultName').value = state.name || '';
-    el('submitMsg').textContent = '';
-    el('submitMsg').className = 'submitmsg';
-    el('formBtn').classList.toggle('hidden', !L.buildFormUrl(FORM, 'x', s));
+    var msg = el('submitMsg');
+    msg.textContent = '';
+    msg.className = 'submitmsg';
+
+    var btn = el('formBtn');
+    var canSubmit = Boolean(L.formPostUrl(FORM));
+    btn.classList.toggle('hidden', !canSubmit);
+    btn.textContent = 'Submit my score';
+    btn.className = 'btn-full' + (canSubmit ? '' : ' hidden');
+    btn.disabled = false;
+    delete btn.dataset.mode;
 
     show('doneCard');
+
+    // If they gave a name at the start there's nothing to ask, so record it
+    // straight away. Otherwise wait for a name and a tap.
+    if (canSubmit && String(state.name || '').trim()) {
+      submitScore();
+    } else if (canSubmit) {
+      msg.textContent = 'Add your name, then tap Submit my score.';
+    }
   }
 
   function resultLine() {
@@ -1372,14 +1412,108 @@
     }
   };
 
-  el('formBtn').onclick = function () {
-    if (needsName()) return;
-    var url = L.buildFormUrl(FORM, el('resultName').value, state.summary);
-    if (!url) return;
+  // Post the score straight to the Google Form, so the player doesn't have to
+  // open it and press Submit themselves.
+  //
+  // A hidden form POST into a hidden iframe, rather than fetch(): form posts
+  // aren't subject to CORS, and the iframe's load event tells us Google
+  // answered. We still can't read the response (cross-origin), so this is
+  // evidence of delivery, not proof of it -- hence the visible failure path and
+  // the manual fallbacks below.
+  function sendToForm(name, summary, onDone) {
+    var action = L.formPostUrl(FORM);
+    if (!action) { onDone(false); return; }
+
+    var frameName = 'pdq' + Date.now();
+    var frame = document.createElement('iframe');
+    frame.name = frameName;
+    frame.style.display = 'none';
+    document.body.appendChild(frame);
+
+    var form = document.createElement('form');
+    form.action = action;
+    form.method = 'POST';
+    form.target = frameName;
+    form.style.display = 'none';
+
+    var fields = L.formFields(FORM, name, summary);
+    Object.keys(fields).forEach(function (key) {
+      var input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = key;
+      input.value = fields[key];
+      form.appendChild(input);
+    });
+
+    document.body.appendChild(form);
+
+    var settled = false;
+    function finish(ok) {
+      if (settled) return;
+      settled = true;
+      onDone(ok);
+    }
+
+    frame.addEventListener('load', function () { finish(true); });
+    // If nothing comes back, don't leave the player staring at a spinner.
+    setTimeout(function () { finish(false); }, 8000);
+
+    try {
+      form.submit();
+    } catch (e) {
+      finish(false);
+    }
+  }
+
+  function reportSent() {
     var m = el('submitMsg');
-    m.textContent = 'Opening the form — check the details, then press Submit.';
+    m.textContent = 'Score recorded. Nothing else to do.';
     m.className = 'submitmsg ok';
-    window.open(url, '_blank');
+    var btn = el('formBtn');
+    btn.textContent = 'Send again';
+    btn.className = 'btn-full btn-ghost';
+    btn.disabled = false;
+  }
+
+  function reportFailed() {
+    var m = el('submitMsg');
+    m.textContent = 'Couldn\'t confirm your score was sent. Open the form to submit ' +
+                    'it yourself, or copy your result and paste it in Slack.';
+    m.className = 'submitmsg err';
+    var btn = el('formBtn');
+    btn.textContent = 'Open the form instead';
+    btn.className = 'btn-full';
+    btn.disabled = false;
+    btn.dataset.mode = 'manual';
+  }
+
+  function submitScore() {
+    var btn = el('formBtn');
+    var m = el('submitMsg');
+
+    // After a failure, fall back to the visible prefilled form.
+    if (btn.dataset.mode === 'manual') {
+      var url = L.buildFormUrl(FORM, el('resultName').value, state.summary);
+      if (url) {
+        m.textContent = 'Opening the form — check the details, then press Submit.';
+        m.className = 'submitmsg ok';
+        window.open(url, '_blank');
+      }
+      return;
+    }
+
+    btn.disabled = true;
+    m.textContent = 'Recording your score…';
+    m.className = 'submitmsg';
+    sendToForm(el('resultName').value, state.summary, function (ok) {
+      if (ok) reportSent();
+      else reportFailed();
+    });
+  }
+
+  el('formBtn').onclick = function () {
+    if (needsName()) { el('formBtn').disabled = false; return; }
+    submitScore();
   };
 
   el('startBtn').onclick = function () {
