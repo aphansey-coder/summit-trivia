@@ -190,6 +190,39 @@
     background: var(--card-2); color: var(--text); border: 1px solid var(--line);
     border-radius: 11px; outline: none; resize: vertical; }
   textarea:focus { border-color: var(--accent); }
+  /* Score entry, deliberately secondary to the leaderboard above it */
+  .emptyboard { color: var(--muted); font-size: 15px; line-height: 1.5;
+                text-align: center; padding: 26px 10px 20px; }
+  .emptyboard b { color: var(--text); }
+  .emptyboard.hidden { display: none; }
+  .entry { margin-top: 22px; border-top: 1px solid var(--line); padding-top: 6px; }
+  .entry > summary { cursor: pointer; list-style: none; padding: 12px 2px;
+                     font-size: 13px; font-weight: 600; color: var(--muted);
+                     text-transform: uppercase; letter-spacing: .8px;
+                     display: flex; align-items: center; gap: 8px; }
+  .entry > summary::-webkit-details-marker { display: none; }
+  .entry > summary::before { content: '▸'; font-size: 12px; transition: transform .15s ease; }
+  .entry[open] > summary::before { transform: rotate(90deg); }
+  .entry > summary:hover { color: var(--text); }
+  .entrybody { padding-top: 4px; }
+  .entrybody label { font-size: 12px; text-transform: uppercase; letter-spacing: .8px; }
+  .entrysep { font-size: 12px; text-transform: uppercase; letter-spacing: .8px;
+              color: var(--muted); margin: 22px 0 10px; }
+  .sheethelp { font-size: 12.5px; line-height: 1.5; color: var(--muted);
+               margin: 10px 0 0; }
+  .sheethelp b { color: var(--text); font-weight: 600; }
+
+  .sheetbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+              margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+  .sheetbar.hidden { display: none; }
+  .sheetbar button { padding: 10px 15px; font-size: 14px; }
+  .autolabel { display: flex; align-items: center; gap: 6px; font-size: 13px;
+               color: var(--muted); margin: 0; cursor: pointer; }
+  .autolabel input { accent-color: var(--pd-green); width: 15px; height: 15px; }
+  .sheetstate { font-size: 13px; color: var(--muted); }
+  .sheetstate.err { color: #f2919b; }
+  .sheetstate.ok { color: #6cd98d; }
+
   /* Leaderboard, sized to be read across a room */
   .board { margin-top: 20px; }
   .board h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 1px;
@@ -303,23 +336,52 @@
 
   <!-- Tally -->
   <section id="tallyCard" class="card hidden">
-    <h2 class="q" style="margin-bottom:6px">Final scores</h2>
-    <p style="color:var(--muted);font-size:14px;margin:0 0 18px">
-      Paste the rows from the Google Sheet — or a Slack thread — and the
-      leaderboard builds itself. You can also type names and scores by hand.
-    </p>
+    <h2 class="q" style="margin-bottom:18px">Final scores</h2>
 
-    <div class="submitbox" style="margin-top:0">
-      <label for="bulkText">Paste results</label>
-      <textarea id="bulkText" rows="5"
-        placeholder="Paste rows from the Google Sheet, or a whole Slack thread. Headers, timestamps and extra columns are ignored."></textarea>
-      <button id="bulkBtn" class="btn-full btn-ghost">Read scores from paste</button>
-      <div id="bulkMsg" class="submitmsg"></div>
+    <!-- The leaderboard leads; entry is tucked underneath. -->
+    <div id="tallyBoard"></div>
+
+    <div id="tallyEmpty" class="emptyboard">
+      No scores yet. Open <b>Add or edit scores</b> below to connect your Google
+      Sheet, or paste the rows in.
     </div>
 
-    <div id="tallyRows"></div>
-    <button id="addRowBtn" class="btn-ghost" style="padding:9px 14px;font-size:14px">Add another</button>
-    <div id="tallyBoard"></div>
+    <div class="sheetbar" id="sheetBar">
+      <button id="refreshBtn" class="btn-ghost">Refresh from sheet</button>
+      <label class="autolabel"><input type="checkbox" id="autoRefresh"> Auto</label>
+      <span class="sheetstate" id="sheetState"></span>
+    </div>
+
+    <details id="tallyPanel" class="entry">
+      <summary>Add or edit scores</summary>
+
+      <div class="entrybody">
+        <label for="sheetUrl">Google Sheet CSV link</label>
+        <input id="sheetUrl" type="text" autocomplete="off" autocorrect="off"
+               spellcheck="false"
+               placeholder="https://docs.google.com/spreadsheets/d/e/…/pub?output=csv">
+        <div id="sheetMsg" class="submitmsg"></div>
+        <p class="sheethelp">
+          In the responses sheet: <b>File → Share → Publish to web</b>, choose the
+          responses sheet, pick <b>Comma-separated values (.csv)</b>, publish, and
+          paste the link here. It's saved in this browser only — never in the
+          published page, so players never see it. Remember to
+          <b>Stop publishing</b> when the event is over.
+        </p>
+
+        <div class="entrysep">or paste results</div>
+        <label for="bulkText">Paste results</label>
+        <textarea id="bulkText" rows="5"
+          placeholder="Paste rows from the Google Sheet, or a whole Slack thread. Headers, timestamps and extra columns are ignored."></textarea>
+        <button id="bulkBtn" class="btn-full btn-ghost">Read scores from paste</button>
+        <div id="bulkMsg" class="submitmsg"></div>
+
+        <div class="entrysep">or type them in</div>
+        <div id="tallyRows"></div>
+        <button id="addRowBtn" class="btn-ghost" style="padding:9px 14px;font-size:14px">Add another</button>
+      </div>
+    </details>
+
     <div class="links"><a href="#">Back</a> &nbsp;·&nbsp; <a href="#projector">Projector screen</a></div>
   </section>
 
@@ -1143,6 +1205,81 @@
     return { results: out, duplicates: duplicates, skipped: skipped };
   }
 
+  // --- reading a published Google Sheet -------------------------------------
+
+  // Only accept the two Google Sheets endpoints that serve CSV with the
+  // cross-origin headers a browser needs. Anything else would fail confusingly,
+  // so reject it up front with a clear message instead.
+  function sheetCsvUrl(input) {
+    var url = String(input || '').trim();
+    if (!url) return null;
+    if (!/^https:\/\/docs\.google\.com\/spreadsheets\//i.test(url)) return null;
+    // Published-to-web CSV, or the gviz query endpoint.
+    var isPub = /\/pub\?|\/pub$/i.test(url) || /output=csv/i.test(url);
+    var isGviz = /\/gviz\/tq/i.test(url);
+    if (!isPub && !isGviz) return null;
+    return url;
+  }
+
+  // Minimal CSV reader: handles quoted fields, escaped quotes, and newlines
+  // inside quotes. Google quotes anything containing a comma, so a name like
+  // "Smith, Jo" would break a naive split.
+  function parseCsv(text) {
+    var rows = [];
+    var row = [];
+    var field = '';
+    var inQuotes = false;
+    var s = String(text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+    for (var i = 0; i < s.length; i++) {
+      var c = s[i];
+      if (inQuotes) {
+        if (c === '"') {
+          if (s[i + 1] === '"') { field += '"'; i++; }
+          else inQuotes = false;
+        } else {
+          field += c;
+        }
+      } else if (c === '"') {
+        inQuotes = true;
+      } else if (c === ',') {
+        row.push(field); field = '';
+      } else if (c === '\n') {
+        row.push(field); field = '';
+        rows.push(row); row = [];
+      } else {
+        field += c;
+      }
+    }
+    row.push(field);
+    if (row.length > 1 || row[0] !== '') rows.push(row);
+    return rows;
+  }
+
+  // Turn sheet rows into results. Uses the same column detection as a pasted
+  // spreadsheet row, so a reordered form or a missing column still works.
+  function parseSheet(text) {
+    var rows = parseCsv(text);
+    var out = [];
+    var seen = {};
+    var duplicates = 0;
+    var skipped = 0;
+
+    rows.forEach(function (cols) {
+      var cleaned = cols.map(function (c) { return String(c).trim(); })
+        .filter(function (c) { return c !== ''; });
+      if (cleaned.length < 2) { return; }
+      var entry = parseColumns(cleaned);
+      if (!entry) { skipped++; return; }
+      var key = entry.name.toLowerCase();
+      if (seen[key]) { duplicates++; return; }
+      seen[key] = true;
+      out.push(entry);
+    });
+
+    return { results: out, duplicates: duplicates, skipped: skipped };
+  }
+
   // --- misc -----------------------------------------------------------------
 
   function ordinal(n) {
@@ -1167,7 +1304,10 @@
     buildFormUrl: buildFormUrl,
     formPostUrl: formPostUrl,
     formFields: formFields,
-    parseResults: parseResults
+    parseResults: parseResults,
+    sheetCsvUrl: sheetCsvUrl,
+    parseCsv: parseCsv,
+    parseSheet: parseSheet
   };
 });
 
@@ -1670,6 +1810,9 @@
     var ranked = L.rank(readTally());
     var box = el('tallyBoard');
     box.innerHTML = '';
+
+    // The prompt to open the entry panel only makes sense while empty.
+    el('tallyEmpty').classList.toggle('hidden', ranked.length > 0);
     if (!ranked.length) return;
 
     var w = L.winners(ranked);
@@ -1726,7 +1869,21 @@
     if (!el('tallyRows').children.length) {
       for (var i = 0; i < 4; i++) addTallyRow();
     }
+    // Restore the sheet link this browser remembers, and pull straight away so
+    // the screen is useful the moment it opens.
+    if (!el('sheetUrl').value) {
+      var saved = savedSheetUrl();
+      if (saved) {
+        el('sheetUrl').value = saved;
+        showSheetBar();
+        refreshFromSheet(false);
+      }
+    }
+    showSheetBar();
     renderTallyBoard();
+    // Open the entry panel only while there's nothing to show, so the first
+    // visit is actionable and later ones lead with the leaderboard.
+    el('tallyPanel').open = !el('tallyBoard').children.length;
     show('tallyCard');
   }
 
@@ -1734,6 +1891,110 @@
     addTallyRow();
     el('tallyRows').lastChild.children[0].focus();
   };
+
+  // --- pulling from a published Google Sheet -------------------------------
+  //
+  // The sheet URL is deliberately NOT baked into this page. The host pastes it
+  // once and it lives in their browser's localStorage, so it never reaches the
+  // published file, git history, or any player's device.
+
+  var SHEET_KEY = 'trivia.sheetUrl';
+  var autoTimer = null;
+
+  function savedSheetUrl() {
+    try { return localStorage.getItem(SHEET_KEY) || ''; } catch (e) { return ''; }
+  }
+
+  function setSheetState(text, cls) {
+    var s = el('sheetState');
+    s.textContent = text || '';
+    s.className = 'sheetstate' + (cls ? ' ' + cls : '');
+  }
+
+  function showSheetBar() {
+    el('sheetBar').classList.toggle('hidden', !L.sheetCsvUrl(el('sheetUrl').value));
+  }
+
+  // Replace the whole board from the sheet, rather than merging: the sheet is
+  // the source of truth, and a corrected score there should win.
+  function applySheetResults(parsed) {
+    el('tallyRows').innerHTML = '';
+    parsed.results.forEach(function (r) {
+      addTallyRow(r.name, r.score.toFixed(2), r.correct);
+    });
+    // Keep a couple of blanks for anyone who has to be added by hand.
+    addTallyRow();
+    addTallyRow();
+    renderTallyBoard();
+  }
+
+  function refreshFromSheet(quiet) {
+    var url = L.sheetCsvUrl(el('sheetUrl').value);
+    if (!url) {
+      setSheetState('', '');
+      return;
+    }
+
+    if (!quiet) setSheetState('Loading…', '');
+
+    // Google caches the published CSV; a changing parameter helps us get a
+    // fresher copy, though it cannot defeat the cache entirely.
+    var bust = url + (url.indexOf('?') === -1 ? '?' : '&') + 't=' + Date.now();
+
+    fetch(bust, { cache: 'no-store' })
+      .then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.text();
+      })
+      .then(function (text) {
+        var parsed = L.parseSheet(text);
+        if (!parsed.results.length) {
+          setSheetState('Sheet loaded, but no scores found in it', 'err');
+          return;
+        }
+        applySheetResults(parsed);
+        var when = new Date().toLocaleTimeString();
+        setSheetState(parsed.results.length +
+          (parsed.results.length === 1 ? ' score' : ' scores') + ' · ' + when, 'ok');
+      })
+      .catch(function (err) {
+        setSheetState('Couldn\'t read the sheet — check it is published to the ' +
+                      'web as CSV (' + err.message + ')', 'err');
+      });
+  }
+
+  function setAuto(on) {
+    if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+    if (on) autoTimer = setInterval(function () { refreshFromSheet(true); }, 20000);
+  }
+
+  el('sheetUrl').addEventListener('input', function () {
+    var raw = el('sheetUrl').value.trim();
+    var ok = L.sheetCsvUrl(raw);
+    var m = el('sheetMsg');
+
+    if (!raw) {
+      m.textContent = '';
+      m.className = 'submitmsg';
+    } else if (ok) {
+      m.textContent = 'Saved in this browser. Use Refresh from sheet above.';
+      m.className = 'submitmsg ok';
+      try { localStorage.setItem(SHEET_KEY, raw); } catch (e) {}
+    } else {
+      m.textContent = 'That doesn\'t look like a published Sheets CSV link. It ' +
+                      'should start https://docs.google.com/spreadsheets/ and ' +
+                      'end with output=csv.';
+      m.className = 'submitmsg err';
+    }
+    showSheetBar();
+  });
+
+  el('refreshBtn').onclick = function () { refreshFromSheet(false); };
+
+  el('autoRefresh').addEventListener('change', function () {
+    setAuto(el('autoRefresh').checked);
+    if (el('autoRefresh').checked) refreshFromSheet(false);
+  });
 
   el('projUrlInput').addEventListener('input', function () {
     if (!el('projCard').classList.contains('hidden')) renderProjector();
