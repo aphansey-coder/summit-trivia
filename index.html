@@ -222,6 +222,23 @@
   .sheetstate { font-size: 13px; color: var(--muted); }
   .sheetstate.err { color: #f2919b; }
   .sheetstate.ok { color: #6cd98d; }
+  /* Pushed to the right and teal, so it reads as the deliberate final action
+     rather than another routine control. */
+  .btn-close { margin-left: auto;
+               background: linear-gradient(135deg, var(--pd-teal), #004f4f); }
+  .btn-close.reopen { background: var(--card-2); border: 1px solid var(--line);
+                      color: var(--muted); }
+
+  /* Small join QR at the top of the tally screen, for latecomers */
+  .tallyqr { display: flex; align-items: center; gap: 14px; margin-bottom: 20px;
+             padding-bottom: 18px; border-bottom: 1px solid var(--line); }
+  .tallyqr.hidden { display: none; }
+  .tallyqr canvas { background: #fff; border-radius: 8px; padding: 5px;
+                    image-rendering: pixelated; flex: 0 0 auto; }
+  .tallyqr-text { font-size: 13px; color: var(--muted); line-height: 1.45;
+                  min-width: 0; }
+  .tallyqr-text b { display: block; color: var(--text); font-size: 14px; }
+  .tallyqr-text span { word-break: break-all; }
 
   /* Leaderboard, sized to be read across a room */
   .board { margin-top: 20px; }
@@ -336,6 +353,15 @@
 
   <!-- Tally -->
   <section id="tallyCard" class="card hidden">
+    <!-- A small QR up top, so latecomers can still join from this screen. -->
+    <div class="tallyqr" id="tallyQrWrap">
+      <canvas id="tallyQr" width="120" height="120" aria-label="QR code to play the quiz"></canvas>
+      <div class="tallyqr-text">
+        <b>Not played yet?</b>
+        <span id="tallyQrUrl"></span>
+      </div>
+    </div>
+
     <h2 class="q" style="margin-bottom:18px">Final scores</h2>
 
     <!-- The leaderboard leads; entry is tucked underneath. -->
@@ -350,6 +376,7 @@
       <button id="refreshBtn" class="btn-ghost">Refresh from sheet</button>
       <label class="autolabel"><input type="checkbox" id="autoRefresh"> Auto</label>
       <span class="sheetstate" id="sheetState"></span>
+      <button id="closeBtn" class="btn-close">Close the trivia</button>
     </div>
 
     <details id="tallyPanel" class="entry">
@@ -1700,6 +1727,11 @@
     return location.origin + location.pathname;
   }
 
+  // Roughly 20 seconds a question, including reading the feedback.
+  function estimatedMinutes() {
+    return Math.max(2, Math.round((TOTAL * 20) / 60));
+  }
+
   function drawQr(canvas, text, targetPx) {
     if (!canvas || typeof QR === 'undefined') return false;
     var sym;
@@ -1761,7 +1793,10 @@
     warn.classList.add('hidden');
     canvas.classList.remove('hidden');
     el('projUrl').textContent = url;
-    el('projHint').textContent = 'Scan to play. Six questions, about three minutes.';
+    // Derived from the question count, so editing questions.json can't leave
+    // this line saying something untrue on the projector.
+    el('projHint').textContent =
+      'Scan to play. ' + TOTAL + ' questions, about ' + estimatedMinutes() + ' minutes.';
     if (!drawQr(canvas, url, big)) {
       warn.classList.remove('hidden');
       warn.textContent = 'That address is too long to fit in a QR code.';
@@ -1815,13 +1850,21 @@
     el('tallyEmpty').classList.toggle('hidden', ranked.length > 0);
     if (!ranked.length) return;
 
+    // While the trivia is open the standings are provisional, so the banner says
+    // "in the lead". Only once the host closes it does anyone "win".
     var w = L.winners(ranked);
     if (w.length) {
       var crown = document.createElement('div');
-      crown.className = 'crown';
-      crown.textContent = w.length === 1
-        ? '🏆 ' + w[0] + ' wins'
-        : '🏆 Joint winners: ' + w.join(' & ');
+      crown.className = 'crown' + (triviaClosed ? ' final' : '');
+      if (triviaClosed) {
+        crown.textContent = w.length === 1
+          ? '🏆 ' + w[0] + ' is the winner!! 🏆'
+          : '🏆 Joint winners: ' + w.join(' & ') + ' 🏆';
+      } else {
+        crown.textContent = w.length === 1
+          ? w[0] + ' is in the lead!'
+          : w.join(' & ') + ' are tied for the lead!';
+      }
       box.appendChild(crown);
     }
 
@@ -1880,6 +1923,14 @@
       }
     }
     showSheetBar();
+
+    // Small join QR, so anyone who missed the projector can still play from
+    // this screen. Needs a real address, so it's absent when opened from disk.
+    var joinUrl = playerUrl();
+    var qrOk = Boolean(joinUrl) && drawQr(el('tallyQr'), joinUrl, 110);
+    el('tallyQrWrap').classList.toggle('hidden', !qrOk);
+    if (qrOk) el('tallyQrUrl').textContent = joinUrl;
+
     renderTallyBoard();
     // Open the entry panel only while there's nothing to show, so the first
     // visit is actionable and later ones lead with the leaderboard.
@@ -1900,6 +1951,7 @@
 
   var SHEET_KEY = 'trivia.sheetUrl';
   var autoTimer = null;
+  var triviaClosed = false;
 
   function savedSheetUrl() {
     try { return localStorage.getItem(SHEET_KEY) || ''; } catch (e) { return ''; }
@@ -1995,6 +2047,31 @@
     setAuto(el('autoRefresh').checked);
     if (el('autoRefresh').checked) refreshFromSheet(false);
   });
+
+  // Closing the trivia freezes the standings into a result. Reversible, so a
+  // mis-click in front of the room isn't a disaster.
+  el('closeBtn').onclick = function () {
+    triviaClosed = !triviaClosed;
+    var btn = el('closeBtn');
+
+    if (triviaClosed) {
+      // Stop pulling, so a late submission can't change the winner after the
+      // announcement.
+      setAuto(false);
+      el('autoRefresh').checked = false;
+      el('autoRefresh').disabled = true;
+      btn.textContent = 'Reopen the trivia';
+      btn.className = 'btn-close reopen';
+      setSheetState('Closed — standings are final', 'ok');
+    } else {
+      el('autoRefresh').disabled = false;
+      btn.textContent = 'Close the trivia';
+      btn.className = 'btn-close';
+      setSheetState('Reopened — refresh to pick up new scores', '');
+    }
+
+    renderTallyBoard();
+  };
 
   el('projUrlInput').addEventListener('input', function () {
     if (!el('projCard').classList.contains('hidden')) renderProjector();
